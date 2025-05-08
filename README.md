@@ -1,6 +1,10 @@
 # ClickUp MCP (Model Context Protocol)
 
-A minimal implementation of a Model Context Protocol (MCP) server for ClickUp integration, designed to allow Large Language Models (LLMs) to interact with ClickUp tasks and data.
+A minimal implementation of a Model Context Protocol (MCP) server for ClickUp integration, designed to allow Large Language Models (LLMs) to read ClickUp tasks and data.
+
+The main focus is to represent tickets in a way that is easy for LLMs to process and understand.
+This especially includes images in the description and in comments of tickets,
+which are not that easy to understand by just passing the api responses.
 
 ## Overview
 

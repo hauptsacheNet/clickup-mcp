@@ -2,7 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolResult } from "@modelcontextprotocol/sdk/types";
 import { z } from "zod";
-import { splitMarkdownAtImages } from "./markdown";
+import { processClickUpMarkdown, processClickUpText } from "./clickup-text";
 
 const CONFIG = {
   apiKey: process.env.CLICKUP_API_KEY!,
@@ -32,62 +32,79 @@ server.tool(
       ),
   },
   async ({ id }) => {
-    const [task, comments] = await Promise.all([
-      fetch(
-        `https://api.clickup.com/api/v2/task/${id}?include_markdown_description=true`,
-        { headers: { Authorization: CONFIG.apiKey } }
-      ).then((res) => res.json()),
-      fetch(`https://api.clickup.com/api/v2/task/${id}/comment`, {
-        headers: { Authorization: CONFIG.apiKey },
-      }).then((res) => res.json()),
+    const [content, comments] = await Promise.all([
+      loadTaskContent(id),
+      loadTaskComments(id),
     ]);
-
-    // Process markdown description to split at image references
-    const markdownBlocks = await splitMarkdownAtImages(
-      task.markdown_description || "",
-      task.attachments
-    );
-
     return {
-      content: [
-        {
-          type: "text",
-          text: Object.entries({
-            task_id: task.id,
-            name: task.name,
-            status: task.status.status,
-            date_created: new Date(+task.date_created),
-            date_updated: new Date(+task.date_updated),
-            creator: task.creator.username,
-            list: task.list.id,
-          })
-            .map(([key, value]) => `${key}: ${value}`)
-            .join("\n"),
-        },
-        // Include the processed markdown blocks with embedded images
-        ...markdownBlocks,
-        // Include comments ~ without images as those can't be read.
-        ...comments.comments
-          .sort((a: any, b: any) => +a.date - +b.date)
-          .map((comment: any) => {
-            return {
-              type: "text",
-              text: [
-                Object.entries({
-                  comment_id: comment.id,
-                  date: new Date(+comment.date),
-                  user: comment.user.username,
-                })
-                  .map(([key, value]) => `${key}: ${value}`)
-                  .join("\n"),
-                comment.comment_text,
-              ].join("\n\n"),
-            };
-          }),
-      ],
+      content: [...content, ...comments],
     };
   }
 );
+
+async function loadTaskContent(id: string) {
+  const response = await fetch(
+    `https://api.clickup.com/api/v2/task/${id}?include_markdown_description=true`,
+    { headers: { Authorization: CONFIG.apiKey } }
+  );
+  const task = await response.json();
+  const content = await processClickUpMarkdown(
+    task.markdown_description || "",
+    task.attachments
+  );
+
+  // Create the task metadata block
+  const taskMetadata = {
+    type: "text" as const,
+    text: [
+      `task_id: ${task.id}`,
+      `name: ${task.name}`,
+      `status: ${task.status.status}`,
+      `date_created: ${new Date(+task.date_created)}`,
+      `date_updated: ${new Date(+task.date_updated)}`,
+      `creator: ${task.creator.username}`,
+      `list: ${task.list.name} (${task.list.id})`,
+    ].join("\n"),
+  };
+
+  return [taskMetadata, ...content];
+}
+
+async function loadTaskComments(id: string) {
+  const response = await fetch(
+    `https://api.clickup.com/api/v2/task/${id}/comment`,
+    { headers: { Authorization: CONFIG.apiKey } }
+  );
+  const comments = await response.json();
+  return Promise.all(
+    comments.comments
+      .sort((a: any, b: any) => +a.date - +b.date)
+      .map(async (comment: any) => {
+        // Create a header for the comment
+        const commentHeader: CallToolResult["content"][number] = {
+          type: "text" as const,
+          text: [
+            `comment_id: ${comment.id}`,
+            `date: ${new Date(+comment.date)}`,
+            `user: ${comment.user.username}`,
+          ].join("\n"),
+        };
+
+        // Process comment items if they exist
+        if (comment.comment && Array.isArray(comment.comment)) {
+          const commentContentBlocks = await processClickUpText(
+            comment.comment
+          );
+          return [commentHeader, ...commentContentBlocks];
+        } else {
+          return [
+            { type: "text", text: commentHeader.text },
+            { type: "text", text: comment.comment_text },
+          ];
+        }
+      })
+  );
+}
 
 let cachedTasks: any[] = [];
 let lastTaskCacheUpdate = 0;
@@ -144,17 +161,15 @@ server.tool(
     return {
       content: tasks.map((task: any) => ({
         type: "text",
-        text: Object.entries({
-          task_id: task.id,
-          name: task.name,
-          status: task.status.status,
-          date_created: new Date(+task.date_created),
-          date_updated: new Date(+task.date_updated),
-          creator: task.creator.username,
-          list: task.list.id,
-        })
-          .map(([key, value]) => `${key}: ${value}`)
-          .join("\n"),
+        text: [
+          `task_id: ${task.id}`,
+          `name: ${task.name}`,
+          `status: ${task.status.status}`,
+          `date_created: ${new Date(+task.date_created)}`,
+          `date_updated: ${new Date(+task.date_updated)}`,
+          `creator: ${task.creator.username}`,
+          `list: ${task.list.name} (${task.list.id})`,
+        ].join("\n"),
       })),
     };
   }
@@ -198,17 +213,15 @@ server.tool(
     return {
       content: openTasks.map((task: any) => ({
         type: "text",
-        text: Object.entries({
-          task_id: task.id,
-          name: task.name,
-          status: task.status.status,
-          date_created: new Date(+task.date_created),
-          date_updated: new Date(+task.date_updated),
-          creator: task.creator.username,
-          list: task.list.id,
-        })
-          .map(([key, value]) => `${key}: ${value}`)
-          .join("\n"),
+        text: [
+          `task_id: ${task.id}`,
+          `name: ${task.name}`,
+          `status: ${task.status.status}`,
+          `date_created: ${new Date(+task.date_created)}`,
+          `date_updated: ${new Date(+task.date_updated)}`,
+          `creator: ${task.creator.username}`,
+          `list: ${task.list.name} (${task.list.id})`,
+        ].join("\n"),
       })),
     };
   }

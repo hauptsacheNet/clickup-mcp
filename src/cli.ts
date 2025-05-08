@@ -95,7 +95,7 @@ async function main() {
     
     // Call the tool's callback function
     const result = await tool.callback(params);
-    console.log(JSON.stringify(result, null, 2));
+    console.dir(result.content);
   } catch (error: unknown) {
     if (error instanceof Error) {
       console.error("Error:", error.message);
