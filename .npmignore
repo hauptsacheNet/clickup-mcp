@@ -1,0 +1,29 @@
+# Source files
+src/
+
+# Development files
+.vscode/
+.idea/
+.git/
+.github/
+.gitignore
+.history/
+.env
+.env.*
+
+# Build artifacts
+node_modules/
+coverage/
+.nyc_output/
+*.log
+
+# Test files
+**/*.test.ts
+**/*.spec.ts
+test/
+tests/
+
+# Configuration files that shouldn't be published
+tsconfig.json
+.prettierrc
+.eslintrc

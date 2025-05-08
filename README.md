@@ -57,6 +57,30 @@ npm start
 
 This will start the server using the standard input/output for communication, following the Model Context Protocol.
 
+### Using with Claude Desktop or Similar LLM Apps
+
+You can use this MCP server with Claude Desktop or similar applications by adding it to your MCP configuration:
+
+```json
+{
+  "mcpServers": {
+    "clickup": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@hauptsache.net/clickup-mcp"
+      ],
+      "env": {
+        "CLICKUP_API_KEY": "your_api_key",
+        "CLICKUP_TEAM_ID": "your_team_id"
+      }
+    }
+  }
+}
+```
+
+Replace `your_api_key` and `your_team_id` with your actual ClickUp credentials. This configuration allows Claude or other LLMs to directly access your ClickUp tasks.
+
 ### CLI Usage
 
 For testing or manual usage, you can use the CLI interface:

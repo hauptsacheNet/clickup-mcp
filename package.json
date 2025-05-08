@@ -1,18 +1,30 @@
 {
-  "name": "clickup-mcp",
+  "name": "@hauptsache.net/clickup-mcp",
   "version": "1.0.0",
-  "main": "index.js",
+  "description": "A minimal implementation of a Model Context Protocol (MCP) server for ClickUp integration",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsc -w & nodemon dist/index.js",
     "cli": "npx ts-node src/cli.ts",
-    "prettier": "prettier --write src/**/*.ts"
+    "prettier": "prettier --write src/**/*.ts",
+    "prepublishOnly": "npm run build"
   },
-  "keywords": [],
+  "keywords": [
+    "clickup",
+    "mcp",
+    "model-context-protocol",
+    "llm",
+    "ai"
+  ],
   "author": "",
   "license": "ISC",
-  "description": "",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.9.0",
     "zod": "^3.24.2"
@@ -22,5 +34,16 @@
     "nodemon": "^3.1.9",
     "prettier": "^3.5.3",
     "typescript": "^5.8.3"
-  }
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hauptsacheNet/clickup-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/hauptsacheNet/clickup-mcp/issues"
+  },
+  "homepage": "https://github.com/hauptsacheNet/clickup-mcp#readme"
 }
