@@ -41,22 +41,13 @@ server.tool(
         headers: { Authorization: CONFIG.apiKey },
       }).then((res) => res.json()),
     ]);
-  
-    // Create a map of attachment URLs to their details for easy lookup
-    const attachmentMap = new Map();
-    for (const attachment of task.attachments) {
-      const supportedFormats = ["png", "jpg", "jpeg", "gif", "webp"];
-      if (supportedFormats.includes(attachment.extension.toLowerCase())) {
-        attachmentMap.set(attachment.url, attachment);
-      }
-    }
-  
+
     // Process markdown description to split at image references
     const markdownBlocks = await splitMarkdownAtImages(
       task.markdown_description || "",
-      attachmentMap
+      task.attachments
     );
-  
+
     return {
       content: [
         {
@@ -121,33 +112,91 @@ server.tool(
       const taskLists = await Promise.all(
         [...Array(30)].map((_, i) => {
           return fetch(
-            `https://api.clickup.com/api/v2/team/${CONFIG.teamId}/task?orderBy=updated&page=${i}`,
+            `https://api.clickup.com/api/v2/team/${CONFIG.teamId}/task?order_by=updated&page=${i}`,
             { headers: { Authorization: CONFIG.apiKey } }
           ).then((res) => res.json());
         })
       );
-  
+
       cachedTasks = taskLists.flatMap((taskList) => taskList.tasks);
       lastTaskCacheUpdate = Date.now();
     }
-  
-    const searchTerms = terms.split("|").map((term) => term.trim().toLowerCase());
+
+    const searchTerms = terms
+      .split("|")
+      .map((term) => term.trim().toLowerCase());
     const tasks = cachedTasks.filter((task) => {
       const taskNameLower = task.name.toLowerCase();
       return searchTerms.some((term) => taskNameLower.includes(term));
     });
-  
+
     if (tasks.length === 0) {
       return {
-        content: [{
-          type: "text",
-          text: "No tasks found matching the search terms.",
-        }],
+        content: [
+          {
+            type: "text",
+            text: "No tasks found matching the search terms.",
+          },
+        ],
       };
     }
-  
+
     return {
       content: tasks.map((task: any) => ({
+        type: "text",
+        text: Object.entries({
+          task_id: task.id,
+          name: task.name,
+          status: task.status.status,
+          date_created: new Date(+task.date_created),
+          date_updated: new Date(+task.date_updated),
+          creator: task.creator.username,
+          list: task.list.id,
+        })
+          .map(([key, value]) => `${key}: ${value}`)
+          .join("\n"),
+      })),
+    };
+  }
+);
+
+server.tool(
+  "listTodo",
+  "Lists all open tasks for the current user.",
+  {},
+  async () => {
+    // fetch current user ID
+    const userResp = await fetch("https://api.clickup.com/api/v2/user", {
+      headers: { Authorization: CONFIG.apiKey },
+    }).then((res) => res.json());
+    const userId = userResp.user.id;
+
+    // page through team tasks assigned to this user
+    const taskLists = await Promise.all(
+      [...Array(10)].map((_, i) =>
+        fetch(
+          `https://api.clickup.com/api/v2/team/${CONFIG.teamId}/task?order_by=updated&page=${i}&assignees[]=${userId}`,
+          { headers: { Authorization: CONFIG.apiKey } }
+        ).then((res) => res.json())
+      )
+    );
+    const tasks = taskLists.flatMap((tl) => tl.tasks);
+
+    // filter out closed tasks
+    const openTasks = tasks
+      .filter((task) => task.status.type !== "done")
+      .slice(0, 100);
+
+    if (openTasks.length === 0) {
+      return {
+        content: [
+          { type: "text", text: "No open tasks found for the current user." },
+        ],
+      };
+    }
+
+    return {
+      content: openTasks.map((task: any) => ({
         type: "text",
         text: Object.entries({
           task_id: task.id,
