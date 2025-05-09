@@ -1,6 +1,6 @@
 {
   "name": "@hauptsache.net/clickup-mcp",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "A minimal implementation of a Model Context Protocol (MCP) server for ClickUp integration",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -15,7 +15,8 @@
     "dev": "tsc -w & nodemon dist/index.js",
     "cli": "npx ts-node src/cli.ts",
     "prettier": "prettier --write src/**/*.ts",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "rm -r dist && npm run build",
+    "release": "npm run build && npm publish --access public && git add . && git commit -m \"Release v$(node -p 'require(\"./package.json\").version')\" && git tag -a v$(node -p 'require(\"./package.json\").version') -m \"Release v$(node -p 'require(\"./package.json\").version')\" && git push && git push --tags"
   },
   "keywords": [
     "clickup",
