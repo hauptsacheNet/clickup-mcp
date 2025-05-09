@@ -9,6 +9,7 @@ import { processClickUpMarkdown, processClickUpText } from "./clickup-text";
 const CONFIG = {
   apiKey: process.env.CLICKUP_API_KEY!,
   teamId: process.env.CLICKUP_TEAM_ID!,
+  maxImages: process.env.MAX_IMAGES ? parseInt(process.env.MAX_IMAGES) : 4,
 };
 
 if (!CONFIG.apiKey || !CONFIG.teamId) {
@@ -30,7 +31,7 @@ server.tool(
       .min(7)
       .max(9)
       .describe(
-        `The 7-9 character ID of the task to get without a prefix like "#" or "CU-"`
+        `The 7-9 character ID of the task to get without a prefix like "#", "CU-" or "https://app.clickup.com/t/"`
       ),
   },
   async ({ id }) => {
@@ -38,8 +39,13 @@ server.tool(
       loadTaskContent(id),
       loadTaskComments(id),
     ]);
+    
+    // Combine all content and limit the number of images
+    const allContent = [...content, ...comments];
+    const limitedContent = limitImages(allContent, CONFIG.maxImages);
+    
     return {
-      content: [...content, ...comments],
+      content: limitedContent,
     };
   }
 );
@@ -99,7 +105,8 @@ async function loadTaskComments(id: string) {
   const comments = await response.json();
   return Promise.all(
     comments.comments
-      .sort((a: any, b: any) => +a.date - +b.date)
+      // Sort comments by date, newest first to prioritize recent images
+      .sort((a: any, b: any) => +b.date - +a.date)
       .map(async (comment: any) => {
         // Create a header for the comment
         const commentHeader: CallToolResult["content"][number] = {
@@ -125,6 +132,46 @@ async function loadTaskComments(id: string) {
         }
       })
   );
+}
+
+/**
+ * Limits the number of images in the content array, replacing excess images with text placeholders
+ * Prioritizes keeping the most recent images (assumes content is ordered with newest items last)
+ * 
+ * @param content Array of content blocks that may contain images
+ * @param maxImages Maximum number of images to keep
+ * @returns Modified content array with limited images
+ */
+function limitImages(content: CallToolResult["content"], maxImages: number): CallToolResult["content"] {
+  // Count how many images we have
+  const imageIndices: number[] = [];
+  
+  // Find all image blocks
+  content.forEach((block, index) => {
+    if (block.type === "image") {
+      imageIndices.push(index);
+    }
+  });
+  
+  // If we have fewer images than the limit, return the original content
+  if (imageIndices.length <= maxImages) {
+    return content;
+  }
+  
+  // Determine which images to keep (the most recent ones)
+  // We want to keep the last 'maxImages' images
+  const imagesToRemove = imageIndices.slice(0, imageIndices.length - maxImages);
+  
+  // Create a new content array with excess images replaced by text
+  return content.map((block, index) => {
+    if (block.type === "image" && imagesToRemove.includes(index)) {
+      return {
+        type: "text" as const,
+        text: "[Image removed due to size limitations. Only the most recent images are shown.]",
+      };
+    }
+    return block;
+  });
 }
 
 let cachedTasks: any[] = [];

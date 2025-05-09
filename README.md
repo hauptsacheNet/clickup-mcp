@@ -17,11 +17,10 @@ The standout feature is the ability to retrieve individual tickets with their co
 ## Limitations
 
 - **Todo Management**: The todo management feature is currently limited to 50 tasks since it would otherwise flood the context.
-- **No Lists/Spaces Support**: This MCP does not currently support browsing ClickUp Lists or Spaces due to performance issues with large instances.
+- **No List/Space Support**: This MCP does not currently support browsing ClickUp Lists or Spaces due to performance issues with large instances.
+- **Image Limit**: The MCP processes only the 4 most recent images per task to prevent exceeding context limits. You can adjust this number by setting the `MAX_IMAGES` environment variable, though most AI tools have constraints that prevent using more than 4 images.
 
 ## Setup for Claude Desktop, Windsurf, or Cursor
-
-Setting up this MCP is simple and works the same way across all platforms (Windows, macOS, Linux):
 
 1. **Prerequisites**:
    - A ClickUp account with API access (Profile Icon > Settings > Apps > API Token ~ usually starts with pk_)
