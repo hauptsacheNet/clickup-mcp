@@ -44,9 +44,39 @@ server.tool(
   }
 );
 
+/**
+ * Helper function to generate consistent task metadata
+ */
+function generateTaskMetadata(task: any) {
+  const metadataLines = [
+    `task_id: ${task.id}`,
+    `name: ${task.name}`,
+    `status: ${task.status.status}`,
+    `date_created: ${new Date(+task.date_created)}`,
+    `date_updated: ${new Date(+task.date_updated)}`,
+    `creator: ${task.creator.username}`,
+    `list: ${task.list.name} (${task.list.id})`,
+  ];
+
+  // Add parent task information if it exists
+  if (typeof task.parent === "string") {
+    metadataLines.push(`parent_task_id: ${task.parent}`);
+  }
+
+  // Add child task information if it exists
+  if (task.subtasks && task.subtasks.length > 0) {
+    metadataLines.push(`child_task_ids: ${task.subtasks.map((st: any) => st.id).join(', ')}`);
+  }
+
+  return {
+    type: "text" as const,
+    text: metadataLines.join("\n"),
+  };
+}
+
 async function loadTaskContent(id: string) {
   const response = await fetch(
-    `https://api.clickup.com/api/v2/task/${id}?include_markdown_description=true`,
+    `https://api.clickup.com/api/v2/task/${id}?include_markdown_description=true&include_subtasks=true`,
     { headers: { Authorization: CONFIG.apiKey } }
   );
   const task = await response.json();
@@ -55,19 +85,8 @@ async function loadTaskContent(id: string) {
     task.attachments
   );
 
-  // Create the task metadata block
-  const taskMetadata = {
-    type: "text" as const,
-    text: [
-      `task_id: ${task.id}`,
-      `name: ${task.name}`,
-      `status: ${task.status.status}`,
-      `date_created: ${new Date(+task.date_created)}`,
-      `date_updated: ${new Date(+task.date_updated)}`,
-      `creator: ${task.creator.username}`,
-      `list: ${task.list.name} (${task.list.id})`,
-    ].join("\n"),
-  };
+  // Create the task metadata block using the helper function
+  const taskMetadata = generateTaskMetadata(task);
 
   return [taskMetadata, ...content];
 }
@@ -161,18 +180,7 @@ server.tool(
     }
 
     return {
-      content: tasks.map((task: any) => ({
-        type: "text",
-        text: [
-          `task_id: ${task.id}`,
-          `name: ${task.name}`,
-          `status: ${task.status.status}`,
-          `date_created: ${new Date(+task.date_created)}`,
-          `date_updated: ${new Date(+task.date_updated)}`,
-          `creator: ${task.creator.username}`,
-          `list: ${task.list.name} (${task.list.id})`,
-        ].join("\n"),
-      })),
+      content: tasks.map((task: any) => generateTaskMetadata(task)),
     };
   }
 );
@@ -201,8 +209,8 @@ server.tool(
 
     // filter out closed tasks
     const openTasks = tasks
-      .filter((task) => task.status.type !== "done")
-      .slice(0, 100);
+      .filter((task) => task.status.type !== "done") // done is not closed but also not a todo
+      .slice(0, 50);
 
     if (openTasks.length === 0) {
       return {
@@ -213,18 +221,7 @@ server.tool(
     }
 
     return {
-      content: openTasks.map((task: any) => ({
-        type: "text",
-        text: [
-          `task_id: ${task.id}`,
-          `name: ${task.name}`,
-          `status: ${task.status.status}`,
-          `date_created: ${new Date(+task.date_created)}`,
-          `date_updated: ${new Date(+task.date_updated)}`,
-          `creator: ${task.creator.username}`,
-          `list: ${task.list.name} (${task.list.id})`,
-        ].join("\n"),
-      })),
+      content: openTasks.map((task: any) => generateTaskMetadata(task)),
     };
   }
 );

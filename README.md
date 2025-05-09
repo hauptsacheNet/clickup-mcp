@@ -1,148 +1,74 @@
-# ClickUp MCP (Model Context Protocol)
+# ClickUp MCP for AI Assistants
 
-A minimal implementation of a Model Context Protocol (MCP) server for ClickUp integration, designed to allow Large Language Models (LLMs) to read ClickUp tasks and data.
+A Model Context Protocol (MCP) server that enables AI assistants like Claude, Windsurf, and Cursor to interact with your ClickUp tasks.
 
-The main focus is to represent tickets in a way that is easy for LLMs to process and understand.
-This especially includes images in the description and in comments of tickets,
-which are not that easy to understand by just passing the api responses.
+## Why This MCP Is Great
 
-## Overview
+This MCP excels at providing AI assistants with rich access to your ClickUp tasks:
 
-This MCP provides a lightweight interface for LLMs to:
-- Retrieve detailed task information by ID
-- Search for tasks using keywords
-- List open tasks assigned to the current user
+- **Complete Task Information**: View detailed task data including status, creation date, and assignees
+- **Full Comment History**: Access the entire conversation thread for context
+- **Inline Images Support**: View images embedded in task descriptions and comments
+- **Task Search**: Find relevant tasks using keywords
+- **Todo Management**: List all your open tasks
 
-The implementation includes image handling for task descriptions, allowing LLMs to process both text content and visual information from ClickUp tasks.
+The standout feature is the ability to retrieve individual tickets with their complete comment history and inline images, giving your AI assistant the full context of your work.
 
-## Prerequisites
+## Limitations
 
-- Node.js (v16 or higher)
-- A ClickUp account with API access
-- ClickUp API key and Team ID
+- **Todo Management**: The todo management feature is currently limited to 50 tasks since it would otherwise flood the context.
+- **No Lists/Spaces Support**: This MCP does not currently support browsing ClickUp Lists or Spaces due to performance issues with large instances.
 
-## Installation
+## Setup for Claude Desktop, Windsurf, or Cursor
 
-1. Clone this repository
-2. Install dependencies:
+Setting up this MCP is simple and works the same way across all platforms (Windows, macOS, Linux):
 
-```bash
-npm install
-```
+1. **Prerequisites**:
+   - A ClickUp account with API access (Profile Icon > Settings > Apps > API Token ~ usually starts with pk_)
+   - Your ClickUp API key and Team ID (The ~7 digit number in the url when you are in the settings)
 
-3. Build the TypeScript code:
+2. **Configuration**:
+   Add the following to your MCP configuration file:
 
-```bash
-npm run build
-```
+   ```json
+   {
+     "mcpServers": {
+       "clickup": {
+         "command": "npx",
+         "args": [
+           "-y",
+           "@hauptsache.net/clickup-mcp"
+         ],
+         "env": {
+           "CLICKUP_API_KEY": "your_api_key",
+           "CLICKUP_TEAM_ID": "your_team_id"
+         }
+       }
+     }
+   }
+   ```
 
-## Configuration
+   Replace `your_api_key` and `your_team_id` with your actual ClickUp credentials.
 
-Set the following environment variables:
+3. **Connect Your AI Assistant**:
+   - **Claude Desktop**: Add this configuration in Settings > MCPs
+   - **Windsurf**: Add to your MCP configuration file
+   - **Cursor**: Configure through the MCP settings panel
 
-- `CLICKUP_API_KEY`: Your ClickUp API key
-- `CLICKUP_TEAM_ID`: Your ClickUp team ID
+## Using with Your AI Assistant
 
-You can set these variables in your environment or create a `.env` file at the root of the project.
+Once connected, your AI assistant can:
 
-## Usage
+1. **View Task Details**:
+   Ask: "Show me details for task CU-123456"
 
-### As an MCP Server
+2. **Search Tasks**:
+   Ask: "Find tasks related to login functionality"
 
-To use this as an MCP server with an LLM:
+3. **Check Your Todo List**:
+   Ask: "What tasks are assigned to me?"
 
-```bash
-npm start
-```
-
-This will start the server using the standard input/output for communication, following the Model Context Protocol.
-
-### Using with Claude Desktop or Similar LLM Apps
-
-You can use this MCP server with Claude Desktop or similar applications by adding it to your MCP configuration:
-
-```json
-{
-  "mcpServers": {
-    "clickup": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "@hauptsache.net/clickup-mcp"
-      ],
-      "env": {
-        "CLICKUP_API_KEY": "your_api_key",
-        "CLICKUP_TEAM_ID": "your_team_id"
-      }
-    }
-  }
-}
-```
-
-Replace `your_api_key` and `your_team_id` with your actual ClickUp credentials. This configuration allows Claude or other LLMs to directly access your ClickUp tasks.
-
-### CLI Usage
-
-For testing or manual usage, you can use the CLI interface:
-
-```bash
-# List all available tools
-npm run cli
-
-# Get a task by ID
-npm run cli getTaskById id=abc1234
-
-# Search for tasks
-npm run cli searchTask terms="feature|bug|enhancement"
-
-# List open tasks for the current user
-npm run cli listTodo
-```
-
-## Available Tools
-
-### getTaskById
-
-Retrieves a complete ClickUp task with its description, comments, and embedded images.
-
-Parameters:
-- `id`: The 7-9 character ClickUp task ID (without "#" or "CU-" prefix)
-
-### searchTask
-
-Searches for tasks by name with support for multiple search terms (using OR logic).
-
-Parameters:
-- `terms`: Search terms separated by '|' (e.g., 'term1|term2|term3')
-
-### listTodo
-
-Lists all open tasks assigned to the current user.
-
-Parameters: None
-
-## Development
-
-For development with hot reloading:
-
-```bash
-npm run dev
-```
-
-Format code with Prettier:
-
-```bash
-npm run prettier
-```
-
-## How It Works
-
-This MCP implementation:
-
-1. Connects to the ClickUp API using your API key
-2. Provides tools for LLMs to query and process ClickUp data
-3. Handles image processing in Markdown descriptions
-4. Returns structured data in a format optimized for LLM consumption
+The AI will retrieve the information directly from ClickUp, including all text content, comments, and images, providing you with comprehensive assistance on your tasks.
 
 ## License
 
