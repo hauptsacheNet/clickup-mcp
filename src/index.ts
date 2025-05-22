@@ -22,6 +22,15 @@ export const server = new McpServer({
   version: "1.0.0",
 });
 
+/**
+ * Checks if a string looks like a valid ClickUp task ID
+ * Valid task IDs are 7-9 characters long and contain only alphanumeric characters
+ */
+function isTaskId(str: string): boolean {
+  // Task IDs are 7-9 characters long and contain only alphanumeric characters
+  return /^[a-z0-9]{7,9}$/i.test(str);
+}
+
 server.tool(
   "getTaskById",
   "Get a Clickup task with images and comments by ID",
@@ -30,6 +39,9 @@ server.tool(
       .string()
       .min(7)
       .max(9)
+      .refine(val => isTaskId(val), {
+        message: "Task ID must be 7-9 alphanumeric characters only"
+      })
       .describe(
         `The 7-9 character ID of the task to get without a prefix like "#", "CU-" or "https://app.clickup.com/t/"`
       ),
@@ -210,10 +222,51 @@ server.tool(
     const searchTerms = terms
       .split("|")
       .map((term) => term.trim().toLowerCase());
-    const tasks = cachedTasks.filter((task) => {
+    
+    // Check if any search term looks like a task ID
+    const potentialTaskIds = searchTerms.filter(isTaskId);
+    
+    // Fetch tasks from cache that match search terms
+    const tasksFromCache = cachedTasks.filter((task) => {
       const taskNameLower = task.name.toLowerCase();
-      return searchTerms.some((term) => taskNameLower.includes(term));
+      const taskId = task.id.toLowerCase();
+      return searchTerms.some((term) => taskNameLower.includes(term) || taskId.includes(term));
     });
+    
+    // Fetch tasks by ID directly if they look like task IDs and they're not already in the cache
+    const tasksToFetch = potentialTaskIds.filter(id => {
+      // Check if this ID is already in the tasksFromCache
+      return !tasksFromCache.some(task => task.id.toLowerCase() === id.toLowerCase());
+    });
+    
+    const taskPromises = tasksToFetch.map(async (id) => {
+      try {
+        // Fetch task directly from API
+        const response = await fetch(
+          `https://api.clickup.com/api/v2/task/${id}`,
+          { headers: { Authorization: CONFIG.apiKey } }
+        );
+        
+        if (!response.ok) return null;
+        
+        const task = await response.json();
+        return task;
+      } catch (error) {
+        console.error(`Error fetching task ${id}:`, error);
+        return null;
+      }
+    });
+    
+    // Wait for all task fetches to complete
+    const directlyFetchedTasks = await Promise.all(taskPromises);
+    
+    // Combine tasks from cache and directly fetched tasks, removing nulls
+    const allTasks = [
+      ...tasksFromCache,
+      ...directlyFetchedTasks.filter(Boolean)
+    ];
+    
+    const tasks = allTasks;
 
     if (tasks.length === 0) {
       return {
