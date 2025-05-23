@@ -62,10 +62,52 @@ server.tool(
   }
 );
 
+const spaceCache = new Map<string, Promise<any>>(); // Global cache for space details promises
+
+/**
+ * Function to get space details, using a cache to avoid redundant fetches
+ */
+async function getSpaceDetails(spaceId: string): Promise<any> {
+  if (!spaceId) {
+    return null;
+  }
+  if (!spaceCache.has(spaceId)) {
+    const fetchPromise = fetch(`https://api.clickup.com/api/v2/space/${spaceId}`, {
+      headers: { Authorization: CONFIG.apiKey },
+    })
+    .then(res => {
+      if (!res.ok) {
+        // Don't cache failed requests, or handle errors more gracefully
+        console.error(`Error fetching space ${spaceId}: ${res.status}`);
+        spaceCache.delete(spaceId); // Allow retry on next call
+        return null;
+      }
+      return res.json();
+    })
+    .catch(error => {
+      console.error(`Network error fetching space ${spaceId}:`, error);
+      spaceCache.delete(spaceId); // Allow retry on next call
+      return null;
+    });
+    spaceCache.set(spaceId, fetchPromise);
+  }
+  return spaceCache.get(spaceId);
+}
+
 /**
  * Helper function to generate consistent task metadata
  */
-function generateTaskMetadata(task: any) {
+async function generateTaskMetadata(task: any): Promise<{ type: "text"; text: string }> {
+  let spaceName = task.space?.name || 'Unknown Space';
+  let spaceIdForDisplay = task.space?.id || 'N/A';
+
+  if (spaceName === 'Unknown Space' && task.space?.id) {
+    const spaceDetails = await getSpaceDetails(task.space.id);
+    if (spaceDetails && spaceDetails.name) {
+      spaceName = spaceDetails.name;
+    }
+  }
+
   const metadataLines = [
     `task_id: ${task.id}`,
     `name: ${task.name}`,
@@ -74,6 +116,7 @@ function generateTaskMetadata(task: any) {
     `date_updated: ${new Date(+task.date_updated)}`,
     `creator: ${task.creator.username}`,
     `list: ${task.list.name} (${task.list.id})`,
+    `space: ${spaceName} (${spaceIdForDisplay})`,
   ];
 
   // Add parent task information if it exists
@@ -104,7 +147,7 @@ async function loadTaskContent(id: string) {
   );
 
   // Create the task metadata block using the helper function
-  const taskMetadata = generateTaskMetadata(task);
+  const taskMetadata = await generateTaskMetadata(task);
 
   return [taskMetadata, ...content];
 }
@@ -280,7 +323,7 @@ server.tool(
     }
 
     return {
-      content: tasks.map((task: any) => generateTaskMetadata(task)),
+      content: await Promise.all(tasks.map((task: any) => generateTaskMetadata(task))),
     };
   }
 );
@@ -288,7 +331,6 @@ server.tool(
 server.tool(
   "listTodo",
   "Lists all open tasks for the current user.",
-  {},
   async () => {
     // fetch current user ID
     const userResp = await fetch("https://api.clickup.com/api/v2/user", {
@@ -321,7 +363,7 @@ server.tool(
     }
 
     return {
-      content: openTasks.map((task: any) => generateTaskMetadata(task)),
+      content: await Promise.all(openTasks.map((task: any) => generateTaskMetadata(task))),
     };
   }
 );

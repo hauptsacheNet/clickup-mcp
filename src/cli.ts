@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import 'dotenv/config'; // Load .env file
 import { z } from "zod";
 import { server } from "./index";
 
@@ -19,16 +20,17 @@ async function main() {
     if (tools) {
       for (const [name, tool] of Object.entries(tools)) {
         console.error(`  - ${name}: ${tool.description}`);
-        console.error("    Parameters:");
-        
-        // Get parameter information from the inputSchema
-        const shape = tool.inputSchema._def.shape();
-        for (const [paramName, schema] of Object.entries(shape)) {
-          // @ts-ignore - Accessing schema description
-          const description = schema.description || "No description";
-          console.error(`      - ${paramName}: ${description}`);
+        if (tool.inputSchema && tool.inputSchema._def && typeof tool.inputSchema._def.shape === 'function') { 
+          console.error("    Parameters:");
+          const shape = tool.inputSchema._def.shape();
+          for (const [paramName, schema] of Object.entries(shape)) {
+            // @ts-ignore - Accessing schema description
+            const description = schema.description || "No description";
+            console.error(`      - ${paramName}: ${description}`);
+          }
+        } else {
+          console.error("    Parameters: None"); 
         }
-        
         console.error("");
       }
     }
@@ -77,12 +79,18 @@ async function main() {
     
     const tool = tools[toolName];
     
-    // Validate parameters using the tool's schema
-    try {
-      tool.inputSchema.parse(params);
-    } catch (error) {
-      const validationError = error as z.ZodError;
-      console.error("Parameter validation error:", validationError.message);
+    // Validate parameters using the tool's schema, if it exists
+    if (tool.inputSchema) {
+      try {
+        tool.inputSchema.parse(params);
+      } catch (error) {
+        const validationError = error as z.ZodError;
+        console.error("Parameter validation error:", validationError.message);
+        process.exit(1);
+      }
+    } else if (Object.keys(params).length > 0) {
+      // If there's no schema, but parameters were provided, it's an error
+      console.error(`Error: Tool '${toolName}' does not accept any parameters, but parameters were provided.`);
       process.exit(1);
     }
     
