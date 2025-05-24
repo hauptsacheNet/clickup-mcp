@@ -5,11 +5,25 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { CallToolResult } from "@modelcontextprotocol/sdk/types";
 import { z } from "zod";
 import { processClickUpMarkdown, processClickUpText } from "./clickup-text";
+import Fuse from 'fuse.js';
+
+const rawPrimaryLang = process.env.CLICKUP_PRIMARY_LANGUAGE || process.env.LANG;
+let detectedLanguageHint: string | undefined = undefined;
+
+if (rawPrimaryLang) {
+  // Extract the primary language part (e.g., 'en' from 'en_US.UTF-8' or 'en-GB')
+  // and convert to lowercase.
+  const langPart = rawPrimaryLang.match(/^[a-zA-Z]{2,3}/);
+  if (langPart) {
+    detectedLanguageHint = langPart[0].toLowerCase();
+  }
+}
 
 const CONFIG = {
   apiKey: process.env.CLICKUP_API_KEY!,
   teamId: process.env.CLICKUP_TEAM_ID!,
   maxImages: process.env.MAX_IMAGES ? parseInt(process.env.MAX_IMAGES) : 4,
+  primaryLanguageHint: detectedLanguageHint, // Store the cleaned code directly
 };
 
 if (!CONFIG.apiKey || !CONFIG.teamId) {
@@ -115,6 +129,7 @@ async function generateTaskMetadata(task: any): Promise<{ type: "text"; text: st
     `date_created: ${new Date(+task.date_created)}`,
     `date_updated: ${new Date(+task.date_updated)}`,
     `creator: ${task.creator.username}`,
+    `assignee: ${task.assignees.map((a: any) => a.username).join(', ')}`,
     `list: ${task.list.name} (${task.list.id})`,
     `space: ${spaceName} (${spaceIdForDisplay})`,
   ];
@@ -229,89 +244,145 @@ function limitImages(content: CallToolResult["content"], maxImages: number): Cal
   });
 }
 
-let cachedTasks: any[] = [];
-let lastTaskCacheUpdate = 0;
+let taskSearchIndex: Fuse<any> | null = null;
+let lastIndexUpdateTime = 0;
+const INDEX_REFRESH_INTERVAL = 60000; // 60 seconds
+const MAX_SEARCH_RESULTS = 50;
+
+// Dynamically construct the searchTask description
+const searchTaskDescriptionBase = [
+  "Searches tasks by name, content, assignees, and ID (case insensitive) with fuzzy matching and support for multiple search terms (OR logic).",
+  // Placeholder for language-specific guidance
+  "You'll get a rough overview of the tasks that match the search terms, sorted by relevance.",
+  "Always use getTaskById to get more specific information if a task is relevant.",
+];
+
+if (CONFIG.primaryLanguageHint && CONFIG.primaryLanguageHint.toLowerCase() !== 'en') {
+  searchTaskDescriptionBase.splice(1, 0, `For optimal results, as your ClickUp tasks may be primarily in '${CONFIG.primaryLanguageHint}', consider providing search terms in English and '${CONFIG.primaryLanguageHint}'.`);
+}
+
 server.tool(
   "searchTask",
-  [
-    "Searches tasks by name (case insensitive) with support for multiple search terms (OR logic).",
-    "You'll get a rough overview of the tasks that match the search terms.",
-    "Always use getTaskById to get more specific information if a task is relevant.",
-  ].join("\n"),
+  searchTaskDescriptionBase.join("\n"),
   {
     terms: z
       .string()
       .min(3)
       .describe(
-        "Search terms separated by '|' for OR logic (e.g., 'term1|term2|term3')"
+        "Search terms separated by '|' for OR logic (e.g., 'term1|term2|term3') or a direct task ID"
       ),
   },
   async ({ terms }) => {
-    const timeSinceLastUpdate = Date.now() - lastTaskCacheUpdate;
-    if (timeSinceLastUpdate > 10000) {
-      const taskLists = await Promise.all(
-        [...Array(30)].map((_, i) => {
-          return fetch(
-            `https://api.clickup.com/api/v2/team/${CONFIG.teamId}/task?order_by=updated&page=${i}`,
-            { headers: { Authorization: CONFIG.apiKey } }
-          ).then((res) => res.json());
-        })
-      );
+    const now = Date.now();
+    if (!taskSearchIndex || (now - lastIndexUpdateTime > INDEX_REFRESH_INTERVAL)) {
+      console.error('Refreshing ClickUp task index...');
+      const taskListsPromises = [...Array(30)].map((_, i) => {
+        return fetch(
+          `https://api.clickup.com/api/v2/team/${CONFIG.teamId}/task?order_by=updated&page=${i}&subtasks=true`,
+          { headers: { Authorization: CONFIG.apiKey } }
+        ).then((res) => res.json()).catch(e => { 
+          console.error(`Error fetching page ${i} for index:`, e);
+          return { tasks: [] };
+        });
+      });
+      const taskLists = await Promise.all(taskListsPromises);
+      const allFetchedTasks = taskLists.flatMap(taskList => taskList.tasks);
 
-      cachedTasks = taskLists.flatMap((taskList) => taskList.tasks);
-      lastTaskCacheUpdate = Date.now();
+      if (allFetchedTasks.length > 0) {
+        taskSearchIndex = new Fuse(allFetchedTasks, {
+          keys: [
+            { name: 'name', weight: 0.7 },
+            { name: 'id', weight: 0.6 },
+            { name: 'text_content', weight: 0.5 }, // Task description/content
+            { name: 'tags.name', weight: 0.4 },    // Task Tags
+            { name: 'assignees.username', weight: 0.4 }, // Task Assignees
+            { name: 'list.name', weight: 0.3 },     // Name of the List the task is in
+            { name: 'folder.name', weight: 0.2 },   // Name of the Folder the task is in
+            { name: 'space.name', weight: 0.1 }     // Name of the Space the task is in
+          ],
+          includeScore: true,
+          threshold: 0.4,
+          minMatchCharLength: 2,
+        });
+        lastIndexUpdateTime = now;
+        console.error(`Task index refreshed with ${allFetchedTasks.length} tasks.`);
+      } else {
+        console.error('No tasks fetched to build search index.');
+        // Potentially keep the old index if fetching failed, or clear it
+        // For now, if fetching fails to get any tasks, the index won't update.
+      }
     }
 
-    const searchTerms = terms
+    const searchTermsArray = terms
       .split("|")
-      .map((term) => term.trim().toLowerCase());
-    
-    // Check if any search term looks like a task ID
-    const potentialTaskIds = searchTerms.filter(isTaskId);
-    
-    // Fetch tasks from cache that match search terms
-    const tasksFromCache = cachedTasks.filter((task) => {
-      const taskNameLower = task.name.toLowerCase();
-      const taskId = task.id.toLowerCase();
-      return searchTerms.some((term) => taskNameLower.includes(term) || taskId.includes(term));
-    });
-    
-    // Fetch tasks by ID directly if they look like task IDs and they're not already in the cache
-    const tasksToFetch = potentialTaskIds.filter(id => {
-      // Check if this ID is already in the tasksFromCache
-      return !tasksFromCache.some(task => task.id.toLowerCase() === id.toLowerCase());
-    });
-    
-    const taskPromises = tasksToFetch.map(async (id) => {
-      try {
-        // Fetch task directly from API
-        const response = await fetch(
-          `https://api.clickup.com/api/v2/task/${id}`,
-          { headers: { Authorization: CONFIG.apiKey } }
-        );
-        
-        if (!response.ok) return null;
-        
-        const task = await response.json();
-        return task;
-      } catch (error) {
-        console.error(`Error fetching task ${id}:`, error);
-        return null;
-      }
-    });
-    
-    // Wait for all task fetches to complete
-    const directlyFetchedTasks = await Promise.all(taskPromises);
-    
-    // Combine tasks from cache and directly fetched tasks, removing nulls
-    const allTasks = [
-      ...tasksFromCache,
-      ...directlyFetchedTasks.filter(Boolean)
-    ];
-    
-    const tasks = allTasks;
+      .map((term) => term.trim())
+      .filter(term => term.length > 0);
 
-    if (tasks.length === 0) {
+    if (searchTermsArray.length === 0) {
+      return { content: [{ type: "text", text: "No search terms provided." }] };
+    }
+
+    const uniqueResults = new Map<string, { item: any, score: number }>();
+
+    if (taskSearchIndex) {
+      searchTermsArray.forEach(term => {
+        const results = taskSearchIndex!.search(term.toLowerCase()); 
+        results.forEach(result => {
+          if (result.item && typeof result.item.id === 'string') {
+            const currentScore = result.score ?? 1; // Default to 1 if undefined
+            const existing = uniqueResults.get(result.item.id);
+            if (!existing || currentScore < existing.score) {
+              uniqueResults.set(result.item.id, { item: result.item, score: currentScore });
+            }
+          }
+        });
+      });
+    }
+
+    // Task ID Fallback Logic
+    const potentialTaskIds = searchTermsArray.filter(isTaskId);
+    const foundTaskIdsByFuse = new Set(Array.from(uniqueResults.keys()).map(id => id.toLowerCase())); // Store lowercase for comparison
+    
+    // Filter task IDs that were not found by Fuse, comparing case-insensitively
+    const taskIdsToFetchDirectly = potentialTaskIds.filter(id => {
+      const lowerId = id.toLowerCase();
+      return !foundTaskIdsByFuse.has(lowerId);
+    });
+
+    if (taskIdsToFetchDirectly.length > 0) {
+      console.error(`Attempting direct fetch for task IDs: ${taskIdsToFetchDirectly.join(', ')}`);
+      const directFetchPromises = taskIdsToFetchDirectly.map(async (id) => {
+        try {
+          const response = await fetch(
+            `https://api.clickup.com/api/v2/task/${id}`,
+            { headers: { Authorization: CONFIG.apiKey } }
+          );
+          if (response.ok) {
+            const task = await response.json();
+            if (task && typeof task.id === 'string') {
+              // Add/update with a perfect score if fetched directly, unless a better Fuse score already exists
+              const existing = uniqueResults.get(task.id);
+              if (!existing || 0 < existing.score) { // 0 is a perfect score
+                 uniqueResults.set(task.id, { item: task, score: 0 }); 
+              }
+            }
+            return task;
+          }
+          return null;
+        } catch (error) {
+          console.error(`Error directly fetching task ${id}:`, error);
+          return null;
+        }
+      });
+      await Promise.all(directFetchPromises);
+    }
+
+    const sortedResults = Array.from(uniqueResults.values())
+      .sort((a, b) => a.score - b.score) // Sort by score, ascending (lower is better)
+      .map(entry => entry.item)
+      .slice(0, MAX_SEARCH_RESULTS); // Limit the number of results
+
+    if (sortedResults.length === 0) {
       return {
         content: [
           {
@@ -323,7 +394,7 @@ server.tool(
     }
 
     return {
-      content: await Promise.all(tasks.map((task: any) => generateTaskMetadata(task))),
+      content: await Promise.all(sortedResults.map((task: any) => generateTaskMetadata(task))),
     };
   }
 );

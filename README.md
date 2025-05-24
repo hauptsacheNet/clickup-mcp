@@ -69,6 +69,24 @@ Once connected, your AI assistant can:
 
 The AI will retrieve the information directly from ClickUp, including all text content, comments, and images, providing you with comprehensive assistance on your tasks.
 
+## Configuration
+
+This MCP server can be configured using environment variables:
+
+- `CLICKUP_API_KEY`: (Required) Your ClickUp API key.
+- `CLICKUP_TEAM_ID`: (Required) Your ClickUp Team ID (formerly Workspace ID).
+- `MAX_IMAGES`: (Optional) The maximum number of images to return for a task in `getTaskById`. Defaults to 4.
+- `CLICKUP_PRIMARY_LANGUAGE`: (Optional) A hint for the primary language used in your ClickUp tasks (e.g., "de" for German, "en" for English). This helps the `searchTask` tool provide more tailored guidance in its description for multilingual searches.
+- `LANG`: (Optional) If `CLICKUP_PRIMARY_LANGUAGE` is not set, the MCP will check this standard environment variable (e.g., "en_US.UTF-8", "de_DE") as a fallback to infer the primary language.
+
+### Language-Aware Search Guidance
+
+The `searchTask` tool's description will dynamically adjust based on the detected primary language:
+- If `CLICKUP_PRIMARY_LANGUAGE` or `LANG` suggests a known primary language (e.g., German), the tool's description will specifically recommend providing search terms in both English and that detected language (e.g., German) for optimal results.
+- If no primary language is detected, a more general recommendation for multilingual workspaces will be provided.
+
+This feature aims to improve search effectiveness when the language of user queries (often English) differs from the language of the tasks in ClickUp, without making the MCP itself perform translations. The responsibility for providing bilingual search terms still lies with the agent calling the MCP, but the MCP offers more specific advice if it has a language hint.
+
 ## License
 
 ISC
