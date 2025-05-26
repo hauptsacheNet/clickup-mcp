@@ -7,6 +7,16 @@ import { z } from "zod";
 import { processClickUpMarkdown, processClickUpText } from "./clickup-text";
 import Fuse from 'fuse.js';
 
+// Define ContentBlock type alias for clarity
+type ContentBlock = CallToolResult['content'][number];
+
+// --- Simplified Event Wrapper ---
+interface DatedContentEvent {
+  date: string; // Primary date for sorting this event
+  contentBlocks: ContentBlock[]; // The actual content to be displayed for this event
+}
+// --- End Simplified Event Wrapper ---
+
 const rawPrimaryLang = process.env.CLICKUP_PRIMARY_LANGUAGE || process.env.LANG;
 let detectedLanguageHint: string | undefined = undefined;
 
@@ -61,14 +71,34 @@ server.tool(
       ),
   },
   async ({ id }) => {
-    const [content, comments] = await Promise.all([
-      loadTaskContent(id),
-      loadTaskComments(id),
+    // 1. Load base task content, comment events, and status change events in parallel
+    const [taskDetailContentBlocks, commentEvents, statusChangeEvents] = await Promise.all([
+      loadTaskContent(id), // Returns Promise<ContentBlock[]>
+      loadTaskComments(id), // Returns Promise<DatedContentEvent[]>
+      loadTimeInStatusHistory(id), // Returns Promise<DatedContentEvent[]>
     ]);
+
+    // 2. Combine comment and status change events
+    const allDatedEvents: DatedContentEvent[] = [...commentEvents, ...statusChangeEvents];
     
-    // Combine all content and limit the number of images
-    const allContent = [...content, ...comments];
-    const limitedContent = limitImages(allContent, CONFIG.maxImages);
+    // 3. Sort all dated events chronologically
+    allDatedEvents.sort((a, b) => {
+      const dateA = a.date ? parseInt(a.date) : 0;
+      const dateB = b.date ? parseInt(b.date) : 0;
+      return dateA - dateB;
+    });
+
+    // 4. Flatten sorted events into a single ContentBlock stream
+    let processedEventBlocks: ContentBlock[] = [];
+    for (const event of allDatedEvents) {
+      processedEventBlocks.push(...event.contentBlocks);
+    }
+
+    // 5. Combine task details with processed event blocks
+    const allContentBlocks: ContentBlock[] = [...taskDetailContentBlocks, ...processedEventBlocks];
+    
+    // 6. Limit images
+    const limitedContent: ContentBlock[] = limitImages(allContentBlocks, CONFIG.maxImages);
     
     return {
       content: limitedContent,
@@ -76,42 +106,108 @@ server.tool(
   }
 );
 
-const spaceCache = new Map<string, Promise<any>>(); // Global cache for space details promises
+async function loadTaskContent(taskId: string): Promise<ContentBlock[]> {
+  const response = await fetch(
+    `https://api.clickup.com/api/v2/task/${taskId}?include_markdown_description=true&include_subtasks=true`,
+    { headers: { Authorization: CONFIG.apiKey } }
+  );
+  const task = await response.json();
+  const content: ContentBlock[] = await processClickUpMarkdown(
+    task.markdown_description || "",
+    task.attachments
+  );
 
-/**
- * Function to get space details, using a cache to avoid redundant fetches
- */
-async function getSpaceDetails(spaceId: string): Promise<any> {
-  if (!spaceId) {
-    return null;
+  // Create the task metadata block using the helper function
+  const taskMetadata: ContentBlock = await generateTaskMetadata(task);
+
+  return [taskMetadata, ...content];
+}
+
+async function loadTaskComments(id: string): Promise<DatedContentEvent[]> {
+  const response = await fetch(
+    `https://api.clickup.com/api/v2/task/${id}/comment?start_date=0`, // Ensure all comments are fetched
+    { headers: { Authorization: CONFIG.apiKey } }
+  );
+  if (!response.ok) {
+    console.error(`Error fetching comments for task ${id}: ${response.status} ${response.statusText}`);
+    return [];
   }
-  if (!spaceCache.has(spaceId)) {
-    const fetchPromise = fetch(`https://api.clickup.com/api/v2/space/${spaceId}`, {
-      headers: { Authorization: CONFIG.apiKey },
-    })
-    .then(res => {
-      if (!res.ok) {
-        // Don't cache failed requests, or handle errors more gracefully
-        console.error(`Error fetching space ${spaceId}: ${res.status}`);
-        spaceCache.delete(spaceId); // Allow retry on next call
-        return null;
-      }
-      return res.json();
-    })
-    .catch(error => {
-      console.error(`Network error fetching space ${spaceId}:`, error);
-      spaceCache.delete(spaceId); // Allow retry on next call
-      return null;
-    });
-    spaceCache.set(spaceId, fetchPromise);
+  const commentsData = await response.json();
+  if (!commentsData.comments || !Array.isArray(commentsData.comments)) {
+    console.error(`Unexpected comment data structure for task ${id}`);
+    return [];
   }
-  return spaceCache.get(spaceId);
+  const commentEvents: DatedContentEvent[] = await Promise.all(
+    commentsData.comments.map(async (comment: any) => {
+      const headerBlock: ContentBlock = {
+        type: "text",
+        text: `Comment by ${comment.user.username} on ${new Date(+comment.date)}:`,
+      };
+      
+      const commentBodyBlocks: ContentBlock[] = await processClickUpText(comment.comment);
+      
+      return {
+        date: comment.date, // String timestamp from ClickUp for sorting
+        contentBlocks: [headerBlock, ...commentBodyBlocks],
+      };
+    })
+  );
+  return commentEvents;
+}
+
+async function loadTimeInStatusHistory(taskId: string): Promise<DatedContentEvent[]> {
+  const url = `https://api.clickup.com/api/v2/task/${taskId}/time_in_status`;
+  try {
+    const response = await fetch(url, { headers: { Authorization: CONFIG.apiKey } });
+    if (!response.ok) {
+      console.error(`Error fetching time in status for task ${taskId}: ${response.status} ${response.statusText}`);
+      return [];
+    }
+    // Using 'any' for less strict typing as per user preference, but keeping structure for clarity
+    const data: any = await response.json(); 
+    const events: DatedContentEvent[] = [];
+
+    const processStatusEntry = (entry: any): DatedContentEvent | null => {
+      if (!entry || !entry.total_time || !entry.total_time.since || !entry.status) return null;
+      return {
+        date: entry.total_time.since,
+        contentBlocks: [{
+          type: "text",
+          text: `Status set to '${entry.status}' on ${new Date(+entry.total_time.since)}`,
+        }],
+      };
+    };
+
+    if (data.status_history && Array.isArray(data.status_history)) {
+      data.status_history.forEach((historyEntry: any) => {
+        const event = processStatusEntry(historyEntry);
+        if (event) events.push(event);
+      });
+    }
+
+    if (data.current_status) {
+      const event = processStatusEntry(data.current_status);
+      // Ensure current_status is only added if it's distinct or more recent than the last history item.
+      // The deduplication logic below handles if it's the same as the last history entry.
+      if (event) events.push(event);
+    }
+    
+    // Deduplicate events based on date and status name to avoid adding current_status if it's identical to the last history entry
+    const uniqueEvents = Array.from(new Map(events.map(event => 
+      [`${event.date}-${event.contentBlocks[0]?.text}`, event] // Keying by date and text content of first block
+    )).values());
+
+    return uniqueEvents;
+  } catch (error) {
+    console.error(`Exception fetching time in status for task ${taskId}:`, error);
+    return [];
+  }
 }
 
 /**
  * Helper function to generate consistent task metadata
  */
-async function generateTaskMetadata(task: any): Promise<{ type: "text"; text: string }> {
+async function generateTaskMetadata(task: any): Promise<ContentBlock> {
   let spaceName = task.space?.name || 'Unknown Space';
   let spaceIdForDisplay = task.space?.id || 'N/A';
 
@@ -150,58 +246,36 @@ async function generateTaskMetadata(task: any): Promise<{ type: "text"; text: st
   };
 }
 
-async function loadTaskContent(id: string) {
-  const response = await fetch(
-    `https://api.clickup.com/api/v2/task/${id}?include_markdown_description=true&include_subtasks=true`,
-    { headers: { Authorization: CONFIG.apiKey } }
-  );
-  const task = await response.json();
-  const content = await processClickUpMarkdown(
-    task.markdown_description || "",
-    task.attachments
-  );
+const spaceCache = new Map<string, Promise<any>>(); // Global cache for space details promises
 
-  // Create the task metadata block using the helper function
-  const taskMetadata = await generateTaskMetadata(task);
-
-  return [taskMetadata, ...content];
-}
-
-async function loadTaskComments(id: string) {
-  const response = await fetch(
-    `https://api.clickup.com/api/v2/task/${id}/comment`,
-    { headers: { Authorization: CONFIG.apiKey } }
-  );
-  const comments = await response.json();
-  return Promise.all(
-    comments.comments
-      // Sort comments by date, newest first to prioritize recent images
-      .sort((a: any, b: any) => +b.date - +a.date)
-      .map(async (comment: any) => {
-        // Create a header for the comment
-        const commentHeader: CallToolResult["content"][number] = {
-          type: "text" as const,
-          text: [
-            `comment_id: ${comment.id}`,
-            `date: ${new Date(+comment.date)}`,
-            `user: ${comment.user.username}`,
-          ].join("\n"),
-        };
-
-        // Process comment items if they exist
-        if (comment.comment && Array.isArray(comment.comment)) {
-          const commentContentBlocks = await processClickUpText(
-            comment.comment
-          );
-          return [commentHeader, ...commentContentBlocks];
-        } else {
-          return [
-            { type: "text", text: commentHeader.text },
-            { type: "text", text: comment.comment_text },
-          ];
-        }
-      })
-  );
+/**
+ * Function to get space details, using a cache to avoid redundant fetches
+ */
+async function getSpaceDetails(spaceId: string): Promise<any> {
+  if (!spaceId) {
+    return null;
+  }
+  if (!spaceCache.has(spaceId)) {
+    const fetchPromise = fetch(`https://api.clickup.com/api/v2/space/${spaceId}`, {
+      headers: { Authorization: CONFIG.apiKey },
+    })
+    .then(res => {
+      if (!res.ok) {
+        // Don't cache failed requests, or handle errors more gracefully
+        console.error(`Error fetching space ${spaceId}: ${res.status}`);
+        spaceCache.delete(spaceId); // Allow retry on next call
+        return null;
+      }
+      return res.json();
+    })
+    .catch(error => {
+      console.error(`Network error fetching space ${spaceId}:`, error);
+      spaceCache.delete(spaceId); // Allow retry on next call
+      return null;
+    });
+    spaceCache.set(spaceId, fetchPromise);
+  }
+  return spaceCache.get(spaceId);
 }
 
 /**
@@ -212,7 +286,7 @@ async function loadTaskComments(id: string) {
  * @param maxImages Maximum number of images to keep
  * @returns Modified content array with limited images
  */
-function limitImages(content: CallToolResult["content"], maxImages: number): CallToolResult["content"] {
+function limitImages(content: ContentBlock[], maxImages: number): ContentBlock[] {
   // Count how many images we have
   const imageIndices: number[] = [];
   
