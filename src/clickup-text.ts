@@ -73,8 +73,12 @@ export async function processClickUpText(
       }
     }
     // Handle text items
-    else if (item.text !== undefined) {
+    else if (typeof item.text === "string") {
       currentTextBlock += item.text;
+    }
+    // Handle other types of items like bookmarks or whatever clickup can think of
+    else {
+      currentTextBlock += JSON.stringify(item);
     }
   }
 
