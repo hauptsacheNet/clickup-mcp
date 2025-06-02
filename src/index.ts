@@ -230,6 +230,39 @@ async function generateTaskMetadata(task: any): Promise<ContentBlock> {
     `space: ${spaceName} (${spaceIdForDisplay})`,
   ];
 
+  // Add priority if it exists
+  if (task.priority !== undefined && task.priority !== null) {
+    const priorityName = task.priority.priority || 'none';
+    metadataLines.push(`priority: ${priorityName}`);
+  }
+
+  // Add due date if it exists
+  if (task.due_date) {
+    metadataLines.push(`due_date: ${new Date(+task.due_date)}`);
+  }
+
+  // Add start date if it exists
+  if (task.start_date) {
+    metadataLines.push(`start_date: ${new Date(+task.start_date)}`);
+  }
+
+  // Add time estimate if it exists
+  if (task.time_estimate) {
+    const hours = Math.floor(task.time_estimate / 3600000);
+    const minutes = Math.floor((task.time_estimate % 3600000) / 60000);
+    metadataLines.push(`time_estimate: ${hours}h ${minutes}m`);
+  }
+
+  // Add tags if they exist
+  if (task.tags && task.tags.length > 0) {
+    metadataLines.push(`tags: ${task.tags.map((t: any) => t.name).join(', ')}`);
+  }
+
+  // Add watchers if they exist
+  if (task.watchers && task.watchers.length > 0) {
+    metadataLines.push(`watchers: ${task.watchers.map((w: any) => w.username).join(', ')}`);
+  }
+
   // Add parent task information if it exists
   if (typeof task.parent === "string") {
     metadataLines.push(`parent_task_id: ${task.parent}`);
@@ -238,6 +271,39 @@ async function generateTaskMetadata(task: any): Promise<ContentBlock> {
   // Add child task information if it exists
   if (task.subtasks && task.subtasks.length > 0) {
     metadataLines.push(`child_task_ids: ${task.subtasks.map((st: any) => st.id).join(', ')}`);
+  }
+
+  // Add task URL
+  metadataLines.push(`url: ${task.url}`);
+
+  // Add archived status if true
+  if (task.archived) {
+    metadataLines.push(`archived: true`);
+  }
+
+  // Add custom fields if they exist
+  if (task.custom_fields && task.custom_fields.length > 0) {
+    task.custom_fields.forEach((field: any) => {
+      if (field.value !== undefined && field.value !== null && field.value !== '') {
+        const fieldName = field.name.toLowerCase().replace(/\s+/g, '_');
+        let fieldValue = field.value;
+        
+        // Handle different custom field types
+        if (field.type === 'drop_down' && typeof field.value === 'number') {
+          // For dropdown fields, find the selected option
+          const selectedOption = field.type_config?.options?.find((opt: any) => opt.orderindex === field.value);
+          fieldValue = selectedOption?.name || field.value;
+        } else if (Array.isArray(field.value)) {
+          // For multi-select or array values
+          fieldValue = field.value.map((v: any) => v.name || v).join(', ');
+        } else if (typeof field.value === 'object') {
+          // For object values (like users), extract meaningful data
+          fieldValue = field.value.username || field.value.name || JSON.stringify(field.value);
+        }
+        
+        metadataLines.push(`custom_${fieldName}: ${fieldValue}`);
+      }
+    });
   }
 
   return {
