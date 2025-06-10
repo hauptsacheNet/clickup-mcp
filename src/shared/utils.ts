@@ -3,11 +3,11 @@ import { CONFIG } from "./config";
 
 /**
  * Checks if a string looks like a valid ClickUp task ID
- * Valid task IDs are 7-9 characters long and contain only alphanumeric characters
+ * Valid task IDs are 6-9 characters long and contain only alphanumeric characters
  */
 export function isTaskId(str: string): boolean {
-  // Task IDs are 7-9 characters long and contain only alphanumeric characters
-  return /^[a-z0-9]{7,9}$/i.test(str);
+  // Task IDs are 6-9 characters long and contain only alphanumeric characters
+  return /^[a-z0-9]{6,9}$/i.test(str);
 }
 
 /**
@@ -21,23 +21,23 @@ export function isTaskId(str: string): boolean {
 export function limitImages(content: ContentBlock[], maxImages: number): ContentBlock[] {
   // Count how many images we have
   const imageIndices: number[] = [];
-  
+
   // Find all image blocks
   content.forEach((block, index) => {
     if (block.type === "image") {
       imageIndices.push(index);
     }
   });
-  
+
   // If we have fewer images than the limit, return the original content
   if (imageIndices.length <= maxImages) {
     return content;
   }
-  
+
   // Determine which images to keep (the most recent ones)
   // We want to keep the last 'maxImages' images
   const imagesToRemove = imageIndices.slice(0, imageIndices.length - maxImages);
-  
+
   // Create a new content array with excess images replaced by text
   return content.map((block, index) => {
     if (block.type === "image" && imagesToRemove.includes(index)) {

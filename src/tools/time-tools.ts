@@ -15,21 +15,21 @@ function isoToTimestamp(isoString: string): number {
  */
 function timestampToIso(timestamp: number): string {
   const date = new Date(timestamp);
-  
+
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   const hours = String(date.getHours()).padStart(2, '0');
   const minutes = String(date.getMinutes()).padStart(2, '0');
   const seconds = String(date.getSeconds()).padStart(2, '0');
-  
+
   // Calculate timezone offset
   const offset = date.getTimezoneOffset();
   const offsetHours = Math.floor(Math.abs(offset) / 60);
   const offsetMinutes = Math.abs(offset) % 60;
   const sign = offset <= 0 ? '+' : '-';
   const timezoneOffset = sign + String(offsetHours).padStart(2, '0') + ':' + String(offsetMinutes).padStart(2, '0');
-  
+
   return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}${timezoneOffset}`;
 }
 
@@ -38,7 +38,7 @@ export function registerTimeTools(server: McpServer) {
     "bookTime",
     "Books time on a task for the current user. Use decimal hours (e.g., 0.25 for 15 minutes, 0.5 for 30 minutes, 2.5 for 2.5 hours)",
     {
-      task_id: z.string().min(7).max(9).describe("The 7-9 character task ID to book time against"),
+      task_id: z.string().min(6).max(9).describe("The 6-9 character task ID to book time against"),
       hours: z.number().min(0.01).max(24).describe("Hours to book (decimal format, e.g., 0.25 = 15min, 1.5 = 1h 30min)"),
       description: z.string().optional().describe("Optional description for the time entry"),
       start_time: z.string().optional().describe("Optional start time as ISO date string (e.g., '2024-10-06T09:00:00+02:00', defaults to current time)")
@@ -47,7 +47,7 @@ export function registerTimeTools(server: McpServer) {
       try {
         // Convert hours to milliseconds (ClickUp API uses milliseconds)
         const durationMs = Math.round(hours * 60 * 60 * 1000);
-        
+
         // Convert ISO date to timestamp if provided, otherwise use current time
         const startTimeMs = start_time ? isoToTimestamp(start_time) : Date.now();
 
@@ -73,7 +73,7 @@ export function registerTimeTools(server: McpServer) {
         }
 
         const timeEntry = await response.json();
-        
+
         // Format duration for display
         const displayHours = Math.floor(hours);
         const displayMinutes = Math.round((hours - displayHours) * 60);
@@ -116,7 +116,7 @@ export function registerTimeTools(server: McpServer) {
     "getTaskTimeEntries",
     "Gets all time entries for a specific task",
     {
-      task_id: z.string().min(7).max(9).describe("The 7-9 character task ID to get time entries for"),
+      task_id: z.string().min(6).max(9).describe("The 6-9 character task ID to get time entries for"),
       start_date: z.string().optional().describe("Optional start date filter as ISO date string (e.g., '2024-10-06T00:00:00+02:00')"),
       end_date: z.string().optional().describe("Optional end date filter as ISO date string (e.g., '2024-10-06T23:59:59+02:00')")
     },
@@ -126,11 +126,11 @@ export function registerTimeTools(server: McpServer) {
         const params = new URLSearchParams({
           task_id: task_id
         });
-        
+
         if (start_date) {
           params.append('start_date', isoToTimestamp(start_date).toString());
         }
-        
+
         if (end_date) {
           params.append('end_date', isoToTimestamp(end_date).toString());
         }
@@ -144,7 +144,7 @@ export function registerTimeTools(server: McpServer) {
         }
 
         const data = await response.json();
-        
+
         if (!data.data || !Array.isArray(data.data)) {
           return {
             content: [{ type: "text", text: `No time entries found for task ${task_id}.` }],
@@ -159,9 +159,9 @@ export function registerTimeTools(server: McpServer) {
           const username = entry.user?.username || 'Unknown User';
           const currentTime = timeByUser.get(username) || 0;
           const entryDurationMs = parseInt(entry.duration) || 0;
-          
+
           timeByUser.set(username, currentTime + entryDurationMs);
-          
+
           if (!entriesByUser.has(username)) {
             entriesByUser.set(username, []);
           }
@@ -179,7 +179,7 @@ export function registerTimeTools(server: McpServer) {
           const timeDisplay = displayHours > 0 ? 
             `${displayHours}h ${displayMinutes}m` : 
             `${displayMinutes}m`;
-          
+
           summaryLines.push(`  ${username}: ${timeDisplay}`);
           totalTimeMs += totalMs;
         }

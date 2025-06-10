@@ -18,13 +18,13 @@ export function registerTaskTools(server: McpServer) {
     {
       id: z
         .string()
-        .min(7)
+        .min(6)
         .max(9)
         .refine(val => isTaskId(val), {
-          message: "Task ID must be 7-9 alphanumeric characters only"
+          message: "Task ID must be 6-9 alphanumeric characters only"
         })
         .describe(
-          `The 7-9 character ID of the task to get without a prefix like "#", "CU-" or "https://app.clickup.com/t/"`
+          `The 6-9 character ID of the task to get without a prefix like "#", "CU-" or "https://app.clickup.com/t/"`
         ),
     },
     async ({ id }) => {
@@ -37,7 +37,7 @@ export function registerTaskTools(server: McpServer) {
 
       // 2. Combine comment and status change events
       const allDatedEvents: DatedContentEvent[] = [...commentEvents, ...statusChangeEvents];
-      
+
       // 3. Sort all dated events chronologically
       allDatedEvents.sort((a, b) => {
         const dateA = a.date ? parseInt(a.date) : 0;
@@ -53,10 +53,10 @@ export function registerTaskTools(server: McpServer) {
 
       // 5. Combine task details with processed event blocks
       const allContentBlocks: ContentBlock[] = [...taskDetailContentBlocks, ...processedEventBlocks];
-      
+
       // 6. Limit images
       const limitedContent: ContentBlock[] = limitImages(allContentBlocks, CONFIG.maxImages);
-      
+
       return {
         content: limitedContent,
       };
@@ -154,7 +154,7 @@ export function registerTaskTools(server: McpServer) {
       // Task ID Fallback Logic
       const potentialTaskIds = searchTermsArray.filter(isTaskId);
       const foundTaskIdsByFuse = new Set(Array.from(uniqueResults.keys()).map(id => id.toLowerCase())); // Store lowercase for comparison
-      
+
       // Filter task IDs that were not found by Fuse, comparing case-insensitively
       const taskIdsToFetchDirectly = potentialTaskIds.filter(id => {
         const lowerId = id.toLowerCase();
@@ -208,6 +208,164 @@ export function registerTaskTools(server: McpServer) {
       return {
         content: await Promise.all(sortedResults.map((task: any) => generateTaskMetadata(task))),
       };
+    }
+  );
+
+  server.tool(
+    "addComment",
+    "Adds a comment to a specific task",
+    {
+      task_id: z.string().min(6).max(9).describe("The 6-9 character task ID to comment on"),
+      comment: z.string().min(1).describe("The comment text to add to the task"),
+    },
+    async ({ task_id, comment }) => {
+      try {
+        const requestBody = {
+          comment_text: comment,
+          notify_all: true
+        };
+
+        const response = await fetch(`https://api.clickup.com/api/v2/task/${task_id}/comment`, {
+          method: 'POST',
+          headers: {
+            Authorization: CONFIG.apiKey,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(requestBody)
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(`Error adding comment: ${response.status} ${response.statusText} - ${JSON.stringify(errorData)}`);
+        }
+
+        const commentData = await response.json();
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: [
+                `Comment added successfully!`,
+                `comment_id: ${commentData.id || 'N/A'}`,
+                `task_id: ${task_id}`,
+                `comment: ${comment}`,
+                `date: ${timestampToIso(commentData.date || Date.now())}`,
+                `user: ${commentData.user?.username || 'Current user'}`,
+              ].join('\n')
+            }
+          ],
+        };
+
+      } catch (error) {
+        console.error('Error adding comment:', error);
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Error adding comment: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            },
+          ],
+        };
+      }
+    }
+  );
+
+  server.tool(
+    "updateTaskStatus",
+    "Updates the status of a task. Only works if the current user is assigned to the task.",
+    {
+      task_id: z.string().min(6).max(9).describe("The 6-9 character task ID to update"),
+      status: z.string().min(1).describe("The new status name (e.g., 'in progress', 'done', 'review')")
+    },
+    async ({ task_id, status }) => {
+      try {
+        // First, get current user info
+        const userResponse = await fetch("https://api.clickup.com/api/v2/user", {
+          headers: { Authorization: CONFIG.apiKey },
+        });
+
+        if (!userResponse.ok) {
+          throw new Error(`Error fetching user info: ${userResponse.status} ${userResponse.statusText}`);
+        }
+
+        const userData = await userResponse.json();
+        const currentUserId = userData.user.id;
+
+        // Get task details to check if user is assigned
+        const taskResponse = await fetch(`https://api.clickup.com/api/v2/task/${task_id}`, {
+          headers: { Authorization: CONFIG.apiKey },
+        });
+
+        if (!taskResponse.ok) {
+          throw new Error(`Error fetching task: ${taskResponse.status} ${taskResponse.statusText}`);
+        }
+
+        const taskData = await taskResponse.json();
+
+        // Check if current user is assigned to this task
+        const isAssigned = taskData.assignees?.some((assignee: any) => assignee.id.toString() === currentUserId.toString());
+
+        if (!isAssigned) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Permission denied: You are not assigned to task ${task_id}. Only assigned users can update task status.`,
+              },
+            ],
+          };
+        }
+
+        // Update the task status
+        const updateBody = {
+          status: status
+        };
+
+        const updateResponse = await fetch(`https://api.clickup.com/api/v2/task/${task_id}`, {
+          method: 'PUT',
+          headers: {
+            Authorization: CONFIG.apiKey,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(updateBody)
+        });
+
+        if (!updateResponse.ok) {
+          const errorData = await updateResponse.json().catch(() => ({}));
+          throw new Error(`Error updating task status: ${updateResponse.status} ${updateResponse.statusText} - ${JSON.stringify(errorData)}`);
+        }
+
+        const updatedTask = await updateResponse.json();
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: [
+                `Task status updated successfully!`,
+                `task_id: ${task_id}`,
+                `name: ${updatedTask.name}`,
+                `previous_status: ${taskData.status?.status || 'Unknown'}`,
+                `new_status: ${updatedTask.status?.status || status}`,
+                `updated_by: ${userData.user.username}`,
+                `updated_at: ${timestampToIso(Date.now())}`
+              ].join('\n')
+            }
+          ],
+        };
+
+      } catch (error) {
+        console.error('Error updating task status:', error);
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Error updating task status: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            },
+          ],
+        };
+      }
     }
   );
 
@@ -289,9 +447,9 @@ async function loadTaskComments(id: string): Promise<DatedContentEvent[]> {
         type: "text",
         text: `Comment by ${comment.user.username} on ${timestampToIso(comment.date)}:`,
       };
-      
+
       const commentBodyBlocks: ContentBlock[] = await processClickUpText(comment.comment);
-      
+
       return {
         date: comment.date, // String timestamp from ClickUp for sorting
         contentBlocks: [headerBlock, ...commentBodyBlocks],
@@ -337,7 +495,7 @@ async function loadTimeInStatusHistory(taskId: string): Promise<DatedContentEven
       // The deduplication logic below handles if it's the same as the last history entry.
       if (event) events.push(event);
     }
-    
+
     // Deduplicate events based on date and status name to avoid adding current_status if it's identical to the last history entry
     const uniqueEvents = Array.from(new Map(events.map(event => 
       [`${event.date}-${event.contentBlocks[0]?.text}`, event] // Keying by date and text content of first block
@@ -364,7 +522,7 @@ async function getTaskTimeEntries(taskId: string): Promise<string | null> {
     }
 
     const data = await response.json();
-    
+
     if (!data.data || !Array.isArray(data.data) || data.data.length === 0) {
       return null;
     }
@@ -390,7 +548,7 @@ async function getTaskTimeEntries(taskId: string): Promise<string | null> {
       const timeDisplay = displayHours > 0 ? 
         `${displayHours}h ${displayMinutes}m` : 
         `${displayMinutes}m`;
-      
+
       userTimeEntries.push(`${username}: ${timeDisplay}`);
       totalTimeMs += totalMs;
     }
@@ -411,21 +569,21 @@ async function getTaskTimeEntries(taskId: string): Promise<string | null> {
  */
 function timestampToIso(timestamp: number | string): string {
   const date = new Date(+timestamp);
-  
+
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   const hours = String(date.getHours()).padStart(2, '0');
   const minutes = String(date.getMinutes()).padStart(2, '0');
   const seconds = String(date.getSeconds()).padStart(2, '0');
-  
+
   // Calculate timezone offset
   const offset = date.getTimezoneOffset();
   const offsetHours = Math.floor(Math.abs(offset) / 60);
   const offsetMinutes = Math.abs(offset) % 60;
   const sign = offset <= 0 ? '+' : '-';
   const timezoneOffset = sign + String(offsetHours).padStart(2, '0') + ':' + String(offsetMinutes).padStart(2, '0');
-  
+
   return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}${timezoneOffset}`;
 }
 
@@ -518,7 +676,7 @@ export async function generateTaskMetadata(task: any): Promise<ContentBlock> {
       if (field.value !== undefined && field.value !== null && field.value !== '') {
         const fieldName = field.name.toLowerCase().replace(/\s+/g, '_');
         let fieldValue = field.value;
-        
+
         // Handle different custom field types
         if (field.type === 'drop_down' && typeof field.value === 'number') {
           // For dropdown fields, find the selected option
@@ -531,7 +689,7 @@ export async function generateTaskMetadata(task: any): Promise<ContentBlock> {
           // For object values (like users), extract meaningful data
           fieldValue = field.value.username || field.value.name || JSON.stringify(field.value);
         }
-        
+
         metadataLines.push(`custom_${fieldName}: ${fieldValue}`);
       }
     });
