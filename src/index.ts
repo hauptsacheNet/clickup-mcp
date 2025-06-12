@@ -9,7 +9,6 @@ import { registerSearchTools } from "./tools/search-tools";
 import { registerSpaceTools } from "./tools/space-tools";
 import { registerListTools } from "./tools/list-tools";
 import { registerTimeTools } from "./tools/time-tools";
-import { registerCreateTools } from "./tools/create-tools";
 
 // Create an MCP server
 export const server = new McpServer({
@@ -23,7 +22,6 @@ registerSearchTools(server);
 registerSpaceTools(server);
 registerListTools(server);
 registerTimeTools(server);
-registerCreateTools(server);
 
 // Only connect to the transport if this file is being run directly (not imported)
 if (require.main === module) {

@@ -5,6 +5,148 @@ import { ContentBlock, DatedContentEvent } from "../shared/types";
 import { CONFIG } from "../shared/config";
 import { isTaskId, limitImages, getSpaceDetails } from "../shared/utils";
 
+// Shared schemas for task parameters
+const taskNameSchema = z.string().min(1).describe("The name/title of the task");
+const taskDescriptionSchema = z.string().optional().describe("Optional description for the task");
+const taskPrioritySchema = z.enum(["urgent", "high", "normal", "low"]).optional().describe("Optional priority level");
+const taskDueDateSchema = z.string().optional().describe("Optional due date as ISO date string (e.g., '2024-10-06T23:59:59+02:00')");
+const taskStartDateSchema = z.string().optional().describe("Optional start date as ISO date string (e.g., '2024-10-06T09:00:00+02:00')");
+const taskTimeEstimateSchema = z.number().optional().describe("Optional time estimate in hours (will be converted to milliseconds)");
+const taskTagsSchema = z.array(z.string()).optional().describe("Optional array of tag names");
+const taskAssigneesSchema = z.array(z.string()).optional().describe("Optional array of user IDs to assign to the task");
+
+// Shared utility functions
+async function getCurrentUser() {
+  const userResponse = await fetch("https://api.clickup.com/api/v2/user", {
+    headers: { Authorization: CONFIG.apiKey },
+  });
+
+  if (!userResponse.ok) {
+    throw new Error(`Error fetching user info: ${userResponse.status} ${userResponse.statusText}`);
+  }
+
+  return await userResponse.json();
+}
+
+function convertPriorityToNumber(priority: string): number {
+  switch (priority) {
+    case "urgent": return 1;
+    case "high": return 2;
+    case "normal": return 3;
+    case "low": return 4;
+    default: return 3;
+  }
+}
+
+function convertPriorityToString(priority: number): string {
+  const priorityMap = { 1: 'urgent', 2: 'high', 3: 'normal', 4: 'low' };
+  return priorityMap[priority as keyof typeof priorityMap] || 'unknown';
+}
+
+function formatTimeEstimate(hours: number): string {
+  const displayHours = Math.floor(hours);
+  const displayMinutes = Math.round((hours - displayHours) * 60);
+  return displayHours > 0 ? `${displayHours}h ${displayMinutes}m` : `${displayMinutes}m`;
+}
+
+function buildTaskRequestBody(params: {
+  name?: string;
+  description?: string;
+  priority?: string;
+  due_date?: string;
+  start_date?: string;
+  time_estimate?: number;
+  tags?: string[];
+  assignees?: string[];
+  parent?: string;
+}, currentUserId?: string): any {
+  const requestBody: any = {};
+
+  if (params.name !== undefined) {
+    requestBody.name = params.name;
+  }
+
+  if (params.description !== undefined) {
+    requestBody.description = params.description;
+  }
+
+  if (params.priority !== undefined) {
+    requestBody.priority = convertPriorityToNumber(params.priority);
+  }
+
+  if (params.due_date !== undefined) {
+    requestBody.due_date = new Date(params.due_date).getTime();
+  }
+
+  if (params.start_date !== undefined) {
+    requestBody.start_date = new Date(params.start_date).getTime();
+  }
+
+  if (params.time_estimate !== undefined) {
+    requestBody.time_estimate = Math.round(params.time_estimate * 60 * 60 * 1000);
+  }
+
+  if (params.tags !== undefined && params.tags.length > 0) {
+    requestBody.tags = params.tags;
+  }
+
+  if (params.assignees !== undefined) {
+    requestBody.assignees = params.assignees;
+  } else if (currentUserId) {
+    requestBody.assignees = [currentUserId];
+  }
+
+  if (params.parent !== undefined) {
+    requestBody.parent = params.parent;
+  }
+
+  return requestBody;
+}
+
+function formatTaskResponse(task: any, operation: 'created' | 'updated', params: any, userData?: any): string[] {
+  const responseLines = [
+    `Task ${operation} successfully!`,
+    `task_id: ${task.id}`,
+    `name: ${task.name}`,
+    ...(operation === 'created' ? [`url: ${task.url}`] : []),
+    `status: ${task.status?.status || 'Unknown'}`,
+    `assignees: ${task.assignees?.map((a: any) => `${a.username} (${a.id})`).join(', ') || 'None'}`,
+    ...(operation === 'created' && params.list_id ? [`list_id: ${params.list_id}`] : []),
+    ...(operation === 'updated' && userData ? [
+      `updated_by: ${userData.user.username}`,
+      `updated_at: ${timestampToIso(Date.now())}`
+    ] : [])
+  ];
+
+  if (params.priority !== undefined || task.priority) {
+    const priority = task.priority ? convertPriorityToString(task.priority.priority) : 
+                    params.priority ? params.priority : 'unknown';
+    responseLines.push(`priority: ${priority}`);
+  }
+
+  if (params.due_date !== undefined) {
+    responseLines.push(`due_date: ${params.due_date}`);
+  }
+
+  if (params.start_date !== undefined) {
+    responseLines.push(`start_date: ${params.start_date}`);
+  }
+
+  if (params.time_estimate !== undefined) {
+    responseLines.push(`time_estimate: ${formatTimeEstimate(params.time_estimate)}`);
+  }
+
+  if (params.tags !== undefined && params.tags.length > 0) {
+    responseLines.push(`tags: ${params.tags.join(', ')}`);
+  }
+
+  if (params.parent !== undefined) {
+    responseLines.push(`parent_task: ${params.parent}`);
+  }
+
+  return responseLines;
+}
+
 export function registerTaskTools(server: McpServer) {
   server.tool(
     "getTaskById",
@@ -123,28 +265,19 @@ export function registerTaskTools(server: McpServer) {
     "Updates various aspects of an existing task. Use getListInfo first to see valid status options.",
     {
       task_id: z.string().min(6).max(9).describe("The 6-9 character task ID to update"),
-      name: z.string().optional().describe("Optional new name/title for the task"),
-      description: z.string().optional().describe("Optional new description for the task"),
+      name: taskNameSchema.optional(),
+      description: taskDescriptionSchema,
       status: z.string().optional().describe("Optional new status name - use getListInfo to see valid options"),
-      priority: z.enum(["urgent", "high", "normal", "low"]).optional().describe("Optional new priority level"),
-      due_date: z.string().optional().describe("Optional new due date as ISO date string (e.g., '2024-10-06T23:59:59+02:00')"),
-      start_date: z.string().optional().describe("Optional new start date as ISO date string (e.g., '2024-10-06T09:00:00+02:00')"),
-      time_estimate: z.number().optional().describe("Optional new time estimate in hours (will be converted to milliseconds)"),
-      tags: z.array(z.string()).optional().describe("Optional array of tag names (will replace existing tags)"),
-      assignees: z.array(z.string()).optional().describe("Optional array of user IDs to assign to the task")
+      priority: taskPrioritySchema,
+      due_date: taskDueDateSchema,
+      start_date: taskStartDateSchema,
+      time_estimate: taskTimeEstimateSchema,
+      tags: taskTagsSchema.describe("Optional array of tag names (will replace existing tags)"),
+      assignees: taskAssigneesSchema
     },
     async ({ task_id, name, description, status, priority, due_date, start_date, time_estimate, tags, assignees }) => {
       try {
-        // Get current user info
-        const userResponse = await fetch("https://api.clickup.com/api/v2/user", {
-          headers: { Authorization: CONFIG.apiKey },
-        });
-
-        if (!userResponse.ok) {
-          throw new Error(`Error fetching user info: ${userResponse.status} ${userResponse.statusText}`);
-        }
-
-        const userData = await userResponse.json();
+        const userData = await getCurrentUser();
 
         // Get task details to get current state
         const taskResponse = await fetch(`https://api.clickup.com/api/v2/task/${task_id}`, {
@@ -157,44 +290,17 @@ export function registerTaskTools(server: McpServer) {
 
         const taskData = await taskResponse.json();
 
-        // Build update body with only provided fields
-        const updateBody: any = {};
+        // Build update body using shared utility
+        const updateBody = buildTaskRequestBody({
+          name, description, priority, due_date, start_date, time_estimate, tags, assignees
+        });
 
-        if (name !== undefined) {
-          updateBody.name = name;
-        }
-
-        if (description !== undefined) {
-          updateBody.description = description;
-        }
-
+        // Add status field (not handled by buildTaskRequestBody since it's update-specific)
         if (status !== undefined) {
           updateBody.status = status;
         }
 
-        if (priority !== undefined) {
-          updateBody.priority = priority === "urgent" ? 1 : 
-                                 priority === "high" ? 2 :
-                                 priority === "normal" ? 3 : 4;
-        }
-
-        if (due_date !== undefined) {
-          updateBody.due_date = new Date(due_date).getTime();
-        }
-
-        if (start_date !== undefined) {
-          updateBody.start_date = new Date(start_date).getTime();
-        }
-
-        if (time_estimate !== undefined) {
-          // Convert hours to milliseconds
-          updateBody.time_estimate = Math.round(time_estimate * 60 * 60 * 1000);
-        }
-
-        if (tags !== undefined && tags.length > 0) {
-          updateBody.tags = tags;
-        }
-
+        // Handle assignees for updates (different from creates)
         if (assignees !== undefined) {
           updateBody.assignees = { add: assignees, rem: [] }; // Add new assignees, remove none
         }
@@ -228,42 +334,9 @@ export function registerTaskTools(server: McpServer) {
 
         const updatedTask = await updateResponse.json();
 
-        // Build response
-        const responseLines = [
-          `Task updated successfully!`,
-          `task_id: ${task_id}`,
-          `name: ${updatedTask.name}`,
-          `status: ${updatedTask.status?.status || 'Unknown'}`,
-          `updated_by: ${userData.user.username}`,
-          `updated_at: ${timestampToIso(Date.now())}`
-        ];
-
-        if (priority !== undefined && updatedTask.priority) {
-          const priorityMap = { 1: 'urgent', 2: 'high', 3: 'normal', 4: 'low' };
-          responseLines.push(`priority: ${priorityMap[updatedTask.priority.priority as keyof typeof priorityMap] || 'unknown'}`);
-        }
-
-        if (due_date !== undefined) {
-          responseLines.push(`due_date: ${due_date}`);
-        }
-
-        if (start_date !== undefined) {
-          responseLines.push(`start_date: ${start_date}`);
-        }
-
-        if (time_estimate !== undefined) {
-          const hours = Math.floor(time_estimate);
-          const minutes = Math.round((time_estimate - hours) * 60);
-          responseLines.push(`time_estimate: ${hours}h ${minutes}m`);
-        }
-
-        if (tags !== undefined && tags.length > 0) {
-          responseLines.push(`tags: ${tags.join(', ')}`);
-        }
-
-        if (assignees !== undefined) {
-          responseLines.push(`assignees: ${updatedTask.assignees?.map((a: any) => a.username).join(', ') || 'None'}`);
-        }
+        const responseLines = formatTaskResponse(updatedTask, 'updated', { 
+          name, description, status, priority, due_date, start_date, time_estimate, tags, assignees 
+        }, userData);
 
         return {
           content: [
@@ -281,6 +354,115 @@ export function registerTaskTools(server: McpServer) {
             {
               type: "text",
               text: `Error updating task: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            },
+          ],
+        };
+      }
+    }
+  );
+
+  server.tool(
+    "createTask",
+    "Creates a new task in a specific list and assigns it to specified users (defaults to current user). Use getListInfo first to understand the list context and available statuses.",
+    {
+      list_id: z.string().min(1).describe("The ID of the list where the task will be created"),
+      name: taskNameSchema,
+      description: taskDescriptionSchema,
+      priority: taskPrioritySchema,
+      due_date: taskDueDateSchema,
+      start_date: taskStartDateSchema,
+      time_estimate: taskTimeEstimateSchema,
+      tags: taskTagsSchema,
+      parent: z.string().optional().describe("Optional parent task ID to create this as a subtask"),
+      assignees: taskAssigneesSchema.describe("Optional array of user IDs to assign to the task (defaults to current user)")
+    },
+    async ({ list_id, name, description, priority, due_date, start_date, time_estimate, tags, parent, assignees }) => {
+      try {
+        const userData = await getCurrentUser();
+        const currentUserId = userData.user.id;
+
+        const requestBody = buildTaskRequestBody({
+          name, description, priority, due_date, start_date, time_estimate, tags, assignees, parent
+        }, currentUserId);
+
+        const response = await fetch(`https://api.clickup.com/api/v2/list/${list_id}/task`, {
+          method: 'POST',
+          headers: {
+            Authorization: CONFIG.apiKey,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(requestBody)
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(`Error creating task: ${response.status} ${response.statusText} - ${JSON.stringify(errorData)}`);
+        }
+
+        const createdTask = await response.json();
+        
+        const responseLines = formatTaskResponse(createdTask, 'created', { 
+          list_id, name, description, priority, due_date, start_date, time_estimate, tags, parent, assignees 
+        });
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: responseLines.join('\n')
+            }
+          ],
+        };
+
+      } catch (error) {
+        console.error('Error creating task:', error);
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Error creating task: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            },
+          ],
+        };
+      }
+    }
+  );
+
+  server.tool(
+    "getCurrentUser",
+    "Gets information about the current authenticated user",
+    async () => {
+      try {
+        const userData = await getCurrentUser();
+        const user = userData.user;
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: [
+                `Current User Information:`,
+                `user_id: ${user.id}`,
+                `username: ${user.username}`,
+                `email: ${user.email}`,
+                `color: ${user.color || 'None'}`,
+                `profile_picture: ${user.profilePicture || 'None'}`,
+                `initials: ${user.initials || 'N/A'}`,
+                `week_start_day: ${user.week_start_day || 0}`,
+                `global_font_support: ${user.global_font_support || false}`,
+                `timezone: ${user.timezone || 'Unknown'}`
+              ].join('\n')
+            }
+          ],
+        };
+
+      } catch (error) {
+        console.error('Error fetching current user:', error);
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Error fetching user info: ${error instanceof Error ? error.message : 'Unknown error'}`,
             },
           ],
         };
