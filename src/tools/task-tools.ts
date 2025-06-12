@@ -1,15 +1,9 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import Fuse from 'fuse.js';
 import { processClickUpMarkdown, processClickUpText } from "../clickup-text";
 import { ContentBlock, DatedContentEvent } from "../shared/types";
 import { CONFIG } from "../shared/config";
 import { isTaskId, limitImages, getSpaceDetails } from "../shared/utils";
-
-let taskSearchIndex: Fuse<any> | null = null;
-let lastIndexUpdateTime = 0;
-const INDEX_REFRESH_INTERVAL = 60000; // 60 seconds
-const MAX_SEARCH_RESULTS = 50;
 
 export function registerTaskTools(server: McpServer) {
   server.tool(
@@ -63,153 +57,6 @@ export function registerTaskTools(server: McpServer) {
     }
   );
 
-  // Dynamically construct the searchTask description
-  const searchTaskDescriptionBase = [
-    "Searches tasks by name, content, assignees, and ID (case insensitive) with fuzzy matching and support for multiple search terms (OR logic).",
-    // Placeholder for language-specific guidance
-    "You'll get a rough overview of the tasks that match the search terms, sorted by relevance.",
-    "Always use getTaskById to get more specific information if a task is relevant.",
-  ];
-
-  if (CONFIG.primaryLanguageHint && CONFIG.primaryLanguageHint.toLowerCase() !== 'en') {
-    searchTaskDescriptionBase.splice(1, 0, `For optimal results, as your ClickUp tasks may be primarily in '${CONFIG.primaryLanguageHint}', consider providing search terms in English and '${CONFIG.primaryLanguageHint}'.`);
-  }
-
-  server.tool(
-    "searchTask",
-    searchTaskDescriptionBase.join("\n"),
-    {
-      terms: z
-        .string()
-        .min(3)
-        .describe(
-          "Search terms separated by '|' for OR logic (e.g., 'term1|term2|term3') or a direct task ID"
-        ),
-    },
-    async ({ terms }) => {
-      const now = Date.now();
-      if (!taskSearchIndex || (now - lastIndexUpdateTime > INDEX_REFRESH_INTERVAL)) {
-        console.error('Refreshing ClickUp task index...');
-        const taskListsPromises = [...Array(30)].map((_, i) => {
-          return fetch(
-            `https://api.clickup.com/api/v2/team/${CONFIG.teamId}/task?order_by=updated&page=${i}&subtasks=true`,
-            { headers: { Authorization: CONFIG.apiKey } }
-          ).then((res) => res.json()).catch(e => { 
-            console.error(`Error fetching page ${i} for index:`, e);
-            return { tasks: [] };
-          });
-        });
-        const taskLists = await Promise.all(taskListsPromises);
-        const allFetchedTasks = taskLists.flatMap(taskList => taskList.tasks);
-
-        if (allFetchedTasks.length > 0) {
-          taskSearchIndex = new Fuse(allFetchedTasks, {
-            keys: [
-              { name: 'name', weight: 0.7 },
-              { name: 'id', weight: 0.6 },
-              { name: 'text_content', weight: 0.5 }, // Task description/content
-              { name: 'tags.name', weight: 0.4 },    // Task Tags
-              { name: 'assignees.username', weight: 0.4 }, // Task Assignees
-              { name: 'list.name', weight: 0.3 },     // Name of the List the task is in
-              { name: 'folder.name', weight: 0.2 },   // Name of the Folder the task is in
-              { name: 'space.name', weight: 0.1 }     // Name of the Space the task is in
-            ],
-            includeScore: true,
-            threshold: 0.4,
-            minMatchCharLength: 2,
-          });
-          lastIndexUpdateTime = now;
-          console.error(`Task index refreshed with ${allFetchedTasks.length} tasks.`);
-        } else {
-          console.error('No tasks fetched to build search index.');
-        }
-      }
-
-      const searchTermsArray = terms
-        .split("|")
-        .map((term) => term.trim())
-        .filter(term => term.length > 0);
-
-      if (searchTermsArray.length === 0) {
-        return { content: [{ type: "text", text: "No search terms provided." }] };
-      }
-
-      const uniqueResults = new Map<string, { item: any, score: number }>();
-
-      if (taskSearchIndex) {
-        searchTermsArray.forEach(term => {
-          const results = taskSearchIndex!.search(term.toLowerCase()); 
-          results.forEach(result => {
-            if (result.item && typeof result.item.id === 'string') {
-              const currentScore = result.score ?? 1; // Default to 1 if undefined
-              const existing = uniqueResults.get(result.item.id);
-              if (!existing || currentScore < existing.score) {
-                uniqueResults.set(result.item.id, { item: result.item, score: currentScore });
-              }
-            }
-          });
-        });
-      }
-
-      // Task ID Fallback Logic
-      const potentialTaskIds = searchTermsArray.filter(isTaskId);
-      const foundTaskIdsByFuse = new Set(Array.from(uniqueResults.keys()).map(id => id.toLowerCase())); // Store lowercase for comparison
-
-      // Filter task IDs that were not found by Fuse, comparing case-insensitively
-      const taskIdsToFetchDirectly = potentialTaskIds.filter(id => {
-        const lowerId = id.toLowerCase();
-        return !foundTaskIdsByFuse.has(lowerId);
-      });
-
-      if (taskIdsToFetchDirectly.length > 0) {
-        console.error(`Attempting direct fetch for task IDs: ${taskIdsToFetchDirectly.join(', ')}`);
-        const directFetchPromises = taskIdsToFetchDirectly.map(async (id) => {
-          try {
-            const response = await fetch(
-              `https://api.clickup.com/api/v2/task/${id}`,
-              { headers: { Authorization: CONFIG.apiKey } }
-            );
-            if (response.ok) {
-              const task = await response.json();
-              if (task && typeof task.id === 'string') {
-                // Add/update with a perfect score if fetched directly, unless a better Fuse score already exists
-                const existing = uniqueResults.get(task.id);
-                if (!existing || 0 < existing.score) { // 0 is a perfect score
-                   uniqueResults.set(task.id, { item: task, score: 0 }); 
-                }
-              }
-              return task;
-            }
-            return null;
-          } catch (error) {
-            console.error(`Error directly fetching task ${id}:`, error);
-            return null;
-          }
-        });
-        await Promise.all(directFetchPromises);
-      }
-
-      const sortedResults = Array.from(uniqueResults.values())
-        .sort((a, b) => a.score - b.score) // Sort by score, ascending (lower is better)
-        .map(entry => entry.item)
-        .slice(0, MAX_SEARCH_RESULTS); // Limit the number of results
-
-      if (sortedResults.length === 0) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "No tasks found matching the search terms.",
-            },
-          ],
-        };
-      }
-
-      return {
-        content: await Promise.all(sortedResults.map((task: any) => generateTaskMetadata(task))),
-      };
-    }
-  );
 
   server.tool(
     "addComment",
@@ -272,11 +119,120 @@ export function registerTaskTools(server: McpServer) {
   );
 
   server.tool(
+    "getAvailableStates",
+    "Gets available status options for a task or list. Use this before updating task status to know which values are valid.",
+    {
+      task_id: z.string().min(6).max(9).optional().describe("The 6-9 character task ID to get statuses for"),
+      list_id: z.string().min(1).optional().describe("The list ID to get statuses for")
+    },
+    async ({ task_id, list_id }) => {
+      try {
+        if (!task_id && !list_id) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "Error: Either task_id or list_id must be provided.",
+              },
+            ],
+          };
+        }
+
+        let targetListId = list_id;
+        let taskName = '';
+
+        // If task_id provided, get task details to find list_id
+        if (task_id) {
+          const taskResponse = await fetch(`https://api.clickup.com/api/v2/task/${task_id}`, {
+            headers: { Authorization: CONFIG.apiKey },
+          });
+
+          if (!taskResponse.ok) {
+            throw new Error(`Error fetching task: ${taskResponse.status} ${taskResponse.statusText}`);
+          }
+
+          const taskData = await taskResponse.json();
+          targetListId = taskData.list?.id;
+          taskName = taskData.name;
+
+          if (!targetListId) {
+            throw new Error(`Could not determine list for task ${task_id}`);
+          }
+        }
+
+        // Get list details including statuses
+        const listResponse = await fetch(`https://api.clickup.com/api/v2/list/${targetListId}`, {
+          headers: { Authorization: CONFIG.apiKey },
+        });
+
+        if (!listResponse.ok) {
+          throw new Error(`Error fetching list details: ${listResponse.status} ${listResponse.statusText}`);
+        }
+
+        const listData = await listResponse.json();
+        
+        if (!listData.statuses || !Array.isArray(listData.statuses)) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `No statuses found for list ${targetListId}.`,
+              },
+            ],
+          };
+        }
+
+        const statuses = listData.statuses.map((status: any) => ({
+          name: status.status,
+          color: status.color || 'none',
+          type: status.type || 'custom'
+        }));
+
+        const responseLines = [
+          task_id ? `Available statuses for task ${task_id} (${taskName}):` : `Available statuses for list ${targetListId} (${listData.name}):`,
+          `list_id: ${targetListId}`,
+          `list_name: ${listData.name}`,
+          `total_statuses: ${statuses.length}`,
+          '',
+          'Available statuses:'
+        ];
+
+        statuses.forEach((status: any) => {
+          responseLines.push(`  - ${status.name} (${status.type})`);
+        });
+
+        responseLines.push('');
+        responseLines.push(`Valid status names for updateTaskStatus: ${statuses.map((s: any) => s.name).join(', ')}`);
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: responseLines.join('\n')
+            }
+          ],
+        };
+
+      } catch (error) {
+        console.error('Error getting available states:', error);
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Error getting available states: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            },
+          ],
+        };
+      }
+    }
+  );
+
+  server.tool(
     "updateTaskStatus",
-    "Updates the status of a task. Only works if the current user is assigned to the task.",
+    "Updates the status of a task. Only works if the current user is assigned to the task. Use getAvailableStates first to see valid status options.",
     {
       task_id: z.string().min(6).max(9).describe("The 6-9 character task ID to update"),
-      status: z.string().min(1).describe("The new status name (e.g., 'in progress', 'done', 'review')")
+      status: z.string().min(1).describe("The new status name - use getAvailableStates to see valid options")
     },
     async ({ task_id, status }) => {
       try {
@@ -369,46 +325,9 @@ export function registerTaskTools(server: McpServer) {
     }
   );
 
-  server.tool(
-    "listTodo",
-    "Lists all open tasks for the current user.",
-    async () => {
-      // fetch current user ID
-      const userResp = await fetch("https://api.clickup.com/api/v2/user", {
-        headers: { Authorization: CONFIG.apiKey },
-      }).then((res) => res.json());
-      const userId = userResp.user.id;
-
-      // page through team tasks assigned to this user
-      const taskLists = await Promise.all(
-        [...Array(10)].map((_, i) =>
-          fetch(
-            `https://api.clickup.com/api/v2/team/${CONFIG.teamId}/task?order_by=updated&page=${i}&assignees[]=${userId}`,
-            { headers: { Authorization: CONFIG.apiKey } }
-          ).then((res) => res.json())
-        )
-      );
-      const tasks = taskLists.flatMap((tl) => tl.tasks);
-
-      // filter out closed tasks
-      const openTasks = tasks
-        .filter((task) => task.status.type !== "done") // done is not closed but also not a todo
-        .slice(0, 50);
-
-      if (openTasks.length === 0) {
-        return {
-          content: [
-            { type: "text", text: "No open tasks found for the current user." },
-          ],
-        };
-      }
-
-      return {
-        content: await Promise.all(openTasks.map((task: any) => generateTaskMetadata(task))),
-      };
-    }
-  );
 }
+
+
 
 async function loadTaskContent(taskId: string): Promise<ContentBlock[]> {
   const response = await fetch(
@@ -575,7 +494,6 @@ function timestampToIso(timestamp: number | string): string {
   const day = String(date.getDate()).padStart(2, '0');
   const hours = String(date.getHours()).padStart(2, '0');
   const minutes = String(date.getMinutes()).padStart(2, '0');
-  const seconds = String(date.getSeconds()).padStart(2, '0');
 
   // Calculate timezone offset
   const offset = date.getTimezoneOffset();
@@ -584,7 +502,7 @@ function timestampToIso(timestamp: number | string): string {
   const sign = offset <= 0 ? '+' : '-';
   const timezoneOffset = sign + String(offsetHours).padStart(2, '0') + ':' + String(offsetMinutes).padStart(2, '0');
 
-  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}${timezoneOffset}`;
+  return `${year}-${month}-${day}T${hours}:${minutes}${timezoneOffset}`;
 }
 
 /**
