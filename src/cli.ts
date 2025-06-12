@@ -53,7 +53,8 @@ async function main() {
       try {
         if (value.startsWith('{') || value.startsWith('[') || 
             value === 'true' || value === 'false' || 
-            !isNaN(Number(value))) {
+            (value.startsWith('"') && value.endsWith('"')) ||
+            (!isNaN(Number(value)) && !key.includes('id') && !value.startsWith('"'))) {
           params[key] = JSON.parse(value);
         } else {
           params[key] = value;

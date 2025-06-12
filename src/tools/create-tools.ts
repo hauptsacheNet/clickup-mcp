@@ -6,7 +6,7 @@ import { ContentBlock } from "../shared/types";
 export function registerCreateTools(server: McpServer) {
   server.tool(
     "createTask",
-    "Creates a new task in a specific list and assigns it to the current user. Basic functionality with smart defaults.",
+    "Creates a new task in a specific list and assigns it to specified users (defaults to current user). Use getListInfo first to understand the list context and available statuses.",
     {
       list_id: z.string().min(1).describe("The ID of the list where the task will be created"),
       name: z.string().min(1).describe("The name/title of the task"),
@@ -16,9 +16,10 @@ export function registerCreateTools(server: McpServer) {
       start_date: z.string().optional().describe("Optional start date as ISO date string (e.g., '2024-10-06T09:00:00+02:00')"),
       time_estimate: z.number().optional().describe("Optional time estimate in hours (will be converted to milliseconds)"),
       tags: z.array(z.string()).optional().describe("Optional array of tag names"),
-      parent: z.string().optional().describe("Optional parent task ID to create this as a subtask")
+      parent: z.string().optional().describe("Optional parent task ID to create this as a subtask"),
+      assignees: z.array(z.string()).optional().describe("Optional array of user IDs to assign to the task (defaults to current user)")
     },
-    async ({ list_id, name, description, priority, due_date, start_date, time_estimate, tags, parent }) => {
+    async ({ list_id, name, description, priority, due_date, start_date, time_estimate, tags, parent, assignees }) => {
       try {
         // Get current user info for assignment
         const userResponse = await fetch("https://api.clickup.com/api/v2/user", {
@@ -35,7 +36,7 @@ export function registerCreateTools(server: McpServer) {
         // Build request body
         const requestBody: any = {
           name,
-          assignees: [currentUserId], // Auto-assign to current user only
+          assignees: assignees && assignees.length > 0 ? assignees : [currentUserId], // Use provided assignees or default to current user
         };
 
         if (description) {
@@ -92,7 +93,7 @@ export function registerCreateTools(server: McpServer) {
           `name: ${createdTask.name}`,
           `url: ${createdTask.url}`,
           `status: ${createdTask.status?.status || 'Unknown'}`,
-          `assignee: ${userData.user.username}`,
+          `assignees: ${createdTask.assignees?.map((a: any) => `${a.username} (${a.id})`).join(', ') || 'None'}`,
           `list_id: ${list_id}`,
         ];
 

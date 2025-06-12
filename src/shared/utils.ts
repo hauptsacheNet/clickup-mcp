@@ -94,12 +94,14 @@ const taskIndices: Map<string, Fuse<any>> = new Map();
  */
 export async function getTaskSearchIndex(
   space_ids?: string[],
-  list_ids?: string[]
+  list_ids?: string[],
+  assignees?: string[]
 ): Promise<Fuse<any> | null> {
   // Create cache key from sorted filter arrays
   const key = JSON.stringify({
     space_ids: space_ids?.sort(),
-    list_ids: list_ids?.sort()
+    list_ids: list_ids?.sort(),
+    assignees: assignees?.sort()
   });
 
   // Check for existing valid index
@@ -110,7 +112,7 @@ export async function getTaskSearchIndex(
 
   // Fetch tasks with specified filters
   console.error(`Refreshing task index for filters: ${key}`);
-  const tasks = await fetchTasks(space_ids, list_ids);
+  const tasks = await fetchTasks(space_ids, list_ids, assignees);
   const index = createFuseIndex(tasks);
 
   // Store with auto-cleanup
@@ -129,7 +131,8 @@ export async function getTaskSearchIndex(
  */
 async function fetchTasks(
   space_ids?: string[],
-  list_ids?: string[]
+  list_ids?: string[],
+  assignees?: string[]
 ): Promise<any[]> {
   const queryParams = ['order_by=updated', 'subtasks=true'];
 
@@ -140,19 +143,23 @@ async function fetchTasks(
   if (list_ids?.length) {
     list_ids.forEach(id => queryParams.push(`list_ids[]=${id}`));
   }
+  if (assignees?.length) {
+    assignees.forEach(id => queryParams.push(`assignees[]=${id}`));
+  }
 
   const queryString = queryParams.join('&');
 
   // Fetch multiple pages in parallel
-  const maxPages = space_ids?.length || list_ids?.length ? 10 : 30; // Fewer pages for filtered searches
-  const taskListsPromises = [...Array(maxPages)].map((_, i) => {
+  const maxPages = space_ids?.length || list_ids?.length || assignees?.length ? 10 : 30; // Fewer pages for filtered searches
+  const taskListsPromises = [...Array(maxPages)].map(async (_, i) => {
     const url = `https://api.clickup.com/api/v2/team/${CONFIG.teamId}/task?${queryString}&page=${i}`;
-    return fetch(url, {headers: {Authorization: CONFIG.apiKey}})
-      .then((res) => res.json())
-      .catch(e => {
-        console.error(`Error fetching page ${i}:`, e);
-        return {tasks: []};
-      });
+    try {
+      const res = await fetch(url, {headers: {Authorization: CONFIG.apiKey}});
+      return await res.json();
+    } catch (e) {
+      console.error(`Error fetching page ${i}:`, e);
+      return {tasks: []};
+    }
   });
 
   const taskLists = await Promise.all(taskListsPromises);

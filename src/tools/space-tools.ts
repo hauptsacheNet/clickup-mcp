@@ -6,7 +6,7 @@ import { ContentBlock } from "../shared/types";
 export function registerSpaceTools(server: McpServer) {
   server.tool(
     "listSpaces", 
-    "Lists all spaces in the workspace with pagination support for large workspaces",
+    "Lists all spaces in the workspace. These might also be referred to as customers or projects.",
     {
       archived: z.boolean().optional().describe("Include archived spaces (default: false)")
     },
@@ -68,6 +68,4 @@ export function registerSpaceTools(server: McpServer) {
       }
     }
   );
-
-  // listFolders tool removed - now integrated into listLists tool in list-tools.ts
 }

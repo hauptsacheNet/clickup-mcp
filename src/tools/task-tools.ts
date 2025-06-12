@@ -119,49 +119,15 @@ export function registerTaskTools(server: McpServer) {
   );
 
   server.tool(
-    "getAvailableStates",
-    "Gets available status options for a task or list. Use this before updating task status to know which values are valid.",
+    "getListInfo",
+    "Gets comprehensive information about a list including description and available statuses. Use this before creating tasks to understand the list context and available statuses for new tasks.",
     {
-      task_id: z.string().min(6).max(9).optional().describe("The 6-9 character task ID to get statuses for"),
-      list_id: z.string().min(1).optional().describe("The list ID to get statuses for")
+      list_id: z.string().min(1).describe("The list ID to get information for")
     },
-    async ({ task_id, list_id }) => {
+    async ({ list_id }) => {
       try {
-        if (!task_id && !list_id) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: "Error: Either task_id or list_id must be provided.",
-              },
-            ],
-          };
-        }
-
-        let targetListId = list_id;
-        let taskName = '';
-
-        // If task_id provided, get task details to find list_id
-        if (task_id) {
-          const taskResponse = await fetch(`https://api.clickup.com/api/v2/task/${task_id}`, {
-            headers: { Authorization: CONFIG.apiKey },
-          });
-
-          if (!taskResponse.ok) {
-            throw new Error(`Error fetching task: ${taskResponse.status} ${taskResponse.statusText}`);
-          }
-
-          const taskData = await taskResponse.json();
-          targetListId = taskData.list?.id;
-          taskName = taskData.name;
-
-          if (!targetListId) {
-            throw new Error(`Could not determine list for task ${task_id}`);
-          }
-        }
-
         // Get list details including statuses
-        const listResponse = await fetch(`https://api.clickup.com/api/v2/list/${targetListId}`, {
+        const listResponse = await fetch(`https://api.clickup.com/api/v2/list/${list_id}`, {
           headers: { Authorization: CONFIG.apiKey },
         });
 
@@ -171,38 +137,42 @@ export function registerTaskTools(server: McpServer) {
 
         const listData = await listResponse.json();
         
-        if (!listData.statuses || !Array.isArray(listData.statuses)) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: `No statuses found for list ${targetListId}.`,
-              },
-            ],
-          };
-        }
-
-        const statuses = listData.statuses.map((status: any) => ({
-          name: status.status,
-          color: status.color || 'none',
-          type: status.type || 'custom'
-        }));
-
         const responseLines = [
-          task_id ? `Available statuses for task ${task_id} (${taskName}):` : `Available statuses for list ${targetListId} (${listData.name}):`,
-          `list_id: ${targetListId}`,
-          `list_name: ${listData.name}`,
-          `total_statuses: ${statuses.length}`,
-          '',
-          'Available statuses:'
+          `List Information:`,
+          `list_id: ${list_id}`,
+          `name: ${listData.name}`,
+          `folder: ${listData.folder?.name || 'No folder'}`,
+          `space: ${listData.space?.name || 'Unknown'} (${listData.space?.id || 'N/A'})`,
+          `archived: ${listData.archived || false}`,
+          `task_count: ${listData.task_count || 0}`,
         ];
 
-        statuses.forEach((status: any) => {
-          responseLines.push(`  - ${status.name} (${status.type})`);
-        });
+        // Add description if available
+        if (listData.content) {
+          responseLines.push(`description: ${listData.content}`);
+        }
 
-        responseLines.push('');
-        responseLines.push(`Valid status names for updateTaskStatus: ${statuses.map((s: any) => s.name).join(', ')}`);
+        // Add available statuses
+        if (listData.statuses && Array.isArray(listData.statuses)) {
+          const statuses = listData.statuses.map((status: any) => ({
+            name: status.status,
+            color: status.color || 'none',
+            type: status.type || 'custom'
+          }));
+
+          responseLines.push('');
+          responseLines.push(`Available statuses (${statuses.length} total):`);
+          
+          statuses.forEach((status: any) => {
+            responseLines.push(`  - ${status.name} (${status.type})`);
+          });
+
+          responseLines.push('');
+          responseLines.push(`Valid status names for createTask/updateTask: ${statuses.map((s: any) => s.name).join(', ')}`);
+        } else {
+          responseLines.push('');
+          responseLines.push('No statuses found for this list.');
+        }
 
         return {
           content: [
@@ -214,12 +184,12 @@ export function registerTaskTools(server: McpServer) {
         };
 
       } catch (error) {
-        console.error('Error getting available states:', error);
+        console.error('Error getting list info:', error);
         return {
           content: [
             {
               type: "text",
-              text: `Error getting available states: ${error instanceof Error ? error.message : 'Unknown error'}`,
+              text: `Error getting list info: ${error instanceof Error ? error.message : 'Unknown error'}`,
             },
           ],
         };
@@ -228,15 +198,23 @@ export function registerTaskTools(server: McpServer) {
   );
 
   server.tool(
-    "updateTaskStatus",
-    "Updates the status of a task. Only works if the current user is assigned to the task. Use getAvailableStates first to see valid status options.",
+    "updateTask",
+    "Updates various aspects of an existing task. Use getListInfo first to see valid status options.",
     {
       task_id: z.string().min(6).max(9).describe("The 6-9 character task ID to update"),
-      status: z.string().min(1).describe("The new status name - use getAvailableStates to see valid options")
+      name: z.string().optional().describe("Optional new name/title for the task"),
+      description: z.string().optional().describe("Optional new description for the task"),
+      status: z.string().optional().describe("Optional new status name - use getListInfo to see valid options"),
+      priority: z.enum(["urgent", "high", "normal", "low"]).optional().describe("Optional new priority level"),
+      due_date: z.string().optional().describe("Optional new due date as ISO date string (e.g., '2024-10-06T23:59:59+02:00')"),
+      start_date: z.string().optional().describe("Optional new start date as ISO date string (e.g., '2024-10-06T09:00:00+02:00')"),
+      time_estimate: z.number().optional().describe("Optional new time estimate in hours (will be converted to milliseconds)"),
+      tags: z.array(z.string()).optional().describe("Optional array of tag names (will replace existing tags)"),
+      assignees: z.array(z.string()).optional().describe("Optional array of user IDs to assign to the task")
     },
-    async ({ task_id, status }) => {
+    async ({ task_id, name, description, status, priority, due_date, start_date, time_estimate, tags, assignees }) => {
       try {
-        // First, get current user info
+        // Get current user info
         const userResponse = await fetch("https://api.clickup.com/api/v2/user", {
           headers: { Authorization: CONFIG.apiKey },
         });
@@ -246,9 +224,8 @@ export function registerTaskTools(server: McpServer) {
         }
 
         const userData = await userResponse.json();
-        const currentUserId = userData.user.id;
 
-        // Get task details to check if user is assigned
+        // Get task details to get current state
         const taskResponse = await fetch(`https://api.clickup.com/api/v2/task/${task_id}`, {
           headers: { Authorization: CONFIG.apiKey },
         });
@@ -259,25 +236,61 @@ export function registerTaskTools(server: McpServer) {
 
         const taskData = await taskResponse.json();
 
-        // Check if current user is assigned to this task
-        const isAssigned = taskData.assignees?.some((assignee: any) => assignee.id.toString() === currentUserId.toString());
+        // Build update body with only provided fields
+        const updateBody: any = {};
 
-        if (!isAssigned) {
+        if (name !== undefined) {
+          updateBody.name = name;
+        }
+
+        if (description !== undefined) {
+          updateBody.description = description;
+        }
+
+        if (status !== undefined) {
+          updateBody.status = status;
+        }
+
+        if (priority !== undefined) {
+          updateBody.priority = priority === "urgent" ? 1 : 
+                                 priority === "high" ? 2 :
+                                 priority === "normal" ? 3 : 4;
+        }
+
+        if (due_date !== undefined) {
+          updateBody.due_date = new Date(due_date).getTime();
+        }
+
+        if (start_date !== undefined) {
+          updateBody.start_date = new Date(start_date).getTime();
+        }
+
+        if (time_estimate !== undefined) {
+          // Convert hours to milliseconds
+          updateBody.time_estimate = Math.round(time_estimate * 60 * 60 * 1000);
+        }
+
+        if (tags !== undefined && tags.length > 0) {
+          updateBody.tags = tags;
+        }
+
+        if (assignees !== undefined) {
+          updateBody.assignees = { add: assignees, rem: [] }; // Add new assignees, remove none
+        }
+
+        // Check if there's anything to update
+        if (Object.keys(updateBody).length === 0) {
           return {
             content: [
               {
                 type: "text",
-                text: `Permission denied: You are not assigned to task ${task_id}. Only assigned users can update task status.`,
+                text: "No updates provided. Please specify at least one field to update.",
               },
             ],
           };
         }
 
-        // Update the task status
-        const updateBody = {
-          status: status
-        };
-
+        // Update the task
         const updateResponse = await fetch(`https://api.clickup.com/api/v2/task/${task_id}`, {
           method: 'PUT',
           headers: {
@@ -289,35 +302,64 @@ export function registerTaskTools(server: McpServer) {
 
         if (!updateResponse.ok) {
           const errorData = await updateResponse.json().catch(() => ({}));
-          throw new Error(`Error updating task status: ${updateResponse.status} ${updateResponse.statusText} - ${JSON.stringify(errorData)}`);
+          throw new Error(`Error updating task: ${updateResponse.status} ${updateResponse.statusText} - ${JSON.stringify(errorData)}`);
         }
 
         const updatedTask = await updateResponse.json();
+
+        // Build response
+        const responseLines = [
+          `Task updated successfully!`,
+          `task_id: ${task_id}`,
+          `name: ${updatedTask.name}`,
+          `status: ${updatedTask.status?.status || 'Unknown'}`,
+          `updated_by: ${userData.user.username}`,
+          `updated_at: ${timestampToIso(Date.now())}`
+        ];
+
+        if (priority !== undefined && updatedTask.priority) {
+          const priorityMap = { 1: 'urgent', 2: 'high', 3: 'normal', 4: 'low' };
+          responseLines.push(`priority: ${priorityMap[updatedTask.priority.priority as keyof typeof priorityMap] || 'unknown'}`);
+        }
+
+        if (due_date !== undefined) {
+          responseLines.push(`due_date: ${due_date}`);
+        }
+
+        if (start_date !== undefined) {
+          responseLines.push(`start_date: ${start_date}`);
+        }
+
+        if (time_estimate !== undefined) {
+          const hours = Math.floor(time_estimate);
+          const minutes = Math.round((time_estimate - hours) * 60);
+          responseLines.push(`time_estimate: ${hours}h ${minutes}m`);
+        }
+
+        if (tags !== undefined && tags.length > 0) {
+          responseLines.push(`tags: ${tags.join(', ')}`);
+        }
+
+        if (assignees !== undefined) {
+          responseLines.push(`assignees: ${updatedTask.assignees?.map((a: any) => a.username).join(', ') || 'None'}`);
+        }
 
         return {
           content: [
             {
               type: "text" as const,
-              text: [
-                `Task status updated successfully!`,
-                `task_id: ${task_id}`,
-                `name: ${updatedTask.name}`,
-                `previous_status: ${taskData.status?.status || 'Unknown'}`,
-                `new_status: ${updatedTask.status?.status || status}`,
-                `updated_by: ${userData.user.username}`,
-                `updated_at: ${timestampToIso(Date.now())}`
-              ].join('\n')
+              text: responseLines.join('\n')
             }
           ],
         };
 
       } catch (error) {
-        console.error('Error updating task status:', error);
+        console.error('Error updating task:', error);
         return {
           content: [
             {
               type: "text",
-              text: `Error updating task status: ${error instanceof Error ? error.message : 'Unknown error'}`,
+              text: `Error updating task: ${error instanceof Error ? error.message : 'Unknown error'}`,
             },
           ],
         };
@@ -525,8 +567,8 @@ export async function generateTaskMetadata(task: any): Promise<ContentBlock> {
     `status: ${task.status.status}`,
     `date_created: ${timestampToIso(task.date_created)}`,
     `date_updated: ${timestampToIso(task.date_updated)}`,
-    `creator: ${task.creator.username}`,
-    `assignee: ${task.assignees.map((a: any) => a.username).join(', ')}`,
+    `creator: ${task.creator.username} (${task.creator.id})`,
+    `assignee: ${task.assignees.map((a: any) => `${a.username} (${a.id})`).join(', ')}`,
     `list: ${task.list.name} (${task.list.id})`,
     `space: ${spaceName} (${spaceIdForDisplay})`,
   ];

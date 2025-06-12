@@ -6,7 +6,7 @@ import { ContentBlock } from "../shared/types";
 export function registerListTools(server: McpServer) {
   server.tool(
     "listLists",
-    "Lists all lists and folders in a space. Shows both direct lists (folderless) and folders containing lists. If folder_id is provided, lists only the lists within that specific folder.",
+    "Lists all lists and folders in a space. They might also be referred to as boards or tables. Shows both direct lists (folderless) and folders containing lists. If folder_id is provided, lists only the lists within that specific folder.",
     {
       space_id: z.string().min(1).describe("The ID of the space to list content from"),
       folder_id: z.string().optional().describe("Optional folder ID. If provided, lists only lists within this folder. If not provided, shows both folders and folderless lists in the space."),

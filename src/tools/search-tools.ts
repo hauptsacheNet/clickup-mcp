@@ -10,7 +10,7 @@ export function registerSearchTools(server: McpServer) {
   // Dynamically construct the searchTasks description
   const searchTasksDescriptionBase = [
     "Searches tasks by name, content, assignees, and ID (case insensitive) with fuzzy matching and support for multiple search terms (OR logic).",
-    "Can filter by multiple list_ids, space_ids, or todo status. If no search terms provided, returns most recently updated tasks.",
+    "Can filter by multiple list_ids, space_ids, todo status, or tasks assigned to the current user. If no search terms provided, returns most recently updated tasks.",
     // Placeholder for language-specific guidance
     "You'll get a rough overview of the tasks that match the search terms, sorted by relevance.",
     "Always use getTaskById to get more specific information if a task is relevant.",
@@ -42,9 +42,45 @@ export function registerSearchTools(server: McpServer) {
         .boolean()
         .optional()
         .describe("Filter for open/todo tasks only (exclude done tasks)"),
+      assigned_to_me: z
+        .boolean()
+        .optional()
+        .describe("Filter for tasks assigned to the current user"),
     },
-    async ({terms, list_ids, space_ids, todo}) => {
-      const searchIndex = await getTaskSearchIndex(space_ids, list_ids);
+    async ({terms, list_ids, space_ids, todo, assigned_to_me}) => {
+      // Get current user ID if filtering by assigned_to_me
+      let assignees: string[] | undefined;
+      if (assigned_to_me) {
+        try {
+          const userResponse = await fetch("https://api.clickup.com/api/v2/user", {
+            headers: { Authorization: CONFIG.apiKey },
+          });
+          if (userResponse.ok) {
+            const userData = await userResponse.json();
+            assignees = [userData.user.id];
+          } else {
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: "Error: Could not fetch current user information.",
+                },
+              ],
+            };
+          }
+        } catch (error) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "Error: Failed to get current user information.",
+              },
+            ],
+          };
+        }
+      }
+
+      const searchIndex = await getTaskSearchIndex(space_ids, list_ids, assignees);
       if (!searchIndex) {
         return {
           content: [
