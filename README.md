@@ -1,30 +1,76 @@
 # ClickUp MCP for AI Assistants
 
-A Model Context Protocol (MCP) server that enables AI assistants like Claude, Windsurf, and Cursor to interact with your ClickUp tasks.
+Transform your AI assistant into a powerful ClickUp integration for both **agentic coding** and **productivity management**. This Model Context Protocol (MCP) server enables Claude, Windsurf, Cursor, and other AI assistants to seamlessly interact with your ClickUp workspace.
 
-## Why This MCP Is Great
+## Two Powerful Use Cases
 
-This MCP excels at providing AI assistants with rich access to your ClickUp tasks:
+### 🛠️ **For Developers & Agentic Coding**
+Originally built to supercharge coding sessions by providing complete task context to AI coding assistants:
 
-- **Complete Task Information**: View detailed task data including status, creation date, and assignees
-- **Full Comment History**: Access the entire conversation thread for context
-- **Inline Images Support**: View images embedded in task descriptions and comments
-- **Task Search**: Find relevant tasks using keywords
-- **Todo Management**: List all your open tasks
+- **Instant Requirements**: *"Get task CU-abc123"* → AI gets full requirements, acceptance criteria, comments, and images
+- **Complete Context**: Pass entire task histories to Claude Code, Windsurf, or Cursor for informed development
+- **Visual Specifications**: Include embedded wireframes, mockups, and screenshots in your coding context
+- **Implementation History**: Access all previous discussions and decisions for better code alignment
 
-The standout feature is the ability to retrieve individual tickets with their complete comment history and inline images, giving your AI assistant the full context of your work.
+### 📋 **For Project Management & Productivity**
+Extended capabilities for conversational ClickUp management and daily workflow optimization.
 
-## Limitations
+## What You Can Do
 
-- **Todo Management**: The todo management feature is currently limited to 50 tasks since it would otherwise flood the context.
-- **No List/Space Support**: This MCP does not currently support browsing ClickUp Lists or Spaces due to performance issues with large instances.
-- **Image Limit**: The MCP processes only the 4 most recent images per task to prevent exceeding context limits. You can adjust this number by setting the `MAX_IMAGES` environment variable, though most AI tools have constraints that prevent using more than 4 images.
+Turn natural language into powerful ClickUp actions:
+
+**Agentic Coding & Development:**
+- *"Look at CU-abc123, can you find the relevant code?"*
+- *"Can you build the dashboard like described in https://app.clickup.com/t/12a23b45c?"*
+- *"Check task CU-xyz789 and fix the bugs mentioned in the comments"*
+- *"Implement the API endpoints described in the integration task"*
+
+**Time Tracking & Productivity:**
+- *"Book 2 hours for the client meeting on the XYZ project"*
+- *"How much time did I spend on development tasks this week?"*
+- *"Log 30 minutes for code review on the authentication feature"*
+
+**Smart Search & Discovery:**
+- *"What task did I mention the CSV import in?"*
+- *"Find all tasks related to the payment gateway integration"*
+- *"Show me tasks where users reported login issues"*
+
+**Daily Workflow Management:**
+- *"What do I need to do today?"*
+- *"Create a task for fixing the dashboard bug in the frontend list"*
+- *"Update the API documentation task to 'in review' status"*
+- *"What tasks are blocking the mobile app release?"*
+
+**Rich Context & Collaboration:**
+- *"Show me all comments on the user authentication task"*
+- *"What's the latest update on the database migration?"*
+- *"Add a comment to the design task about the new wireframes"*
+
+## Key Features
+
+### 🔍 **Intelligent Search**
+Advanced search across task names, descriptions, comments, and metadata with fuzzy matching and multi-language support.
+
+### 💬 **Complete Context**
+Access full comment histories, task descriptions, and embedded images to understand the complete story behind any task.
+
+### ⏱️ **Time Tracking**
+Create time entries, view time logs, and analyze where your time is being spent across projects and tasks.
+
+### 🖼️ **Visual Content**
+View images embedded in task descriptions and comments, giving your AI assistant visual context for better assistance.
+
+### 📋 **Task Management**
+Create, update, and manage tasks with rich metadata including priorities, due dates, assignees, tags, and custom fields.
+
+### 🏗️ **Project Organization**
+Navigate spaces, lists, and folders to understand your project structure and get relevant context.
 
 ## Setup for Claude Desktop, Windsurf, or Cursor
 
 1. **Prerequisites**:
-   - A ClickUp account with API access (Profile Icon > Settings > Apps > API Token ~ usually starts with pk_)
-   - Your ClickUp API key and Team ID (The ~7 digit number in the url when you are in the settings)
+   - Your `CLICKUP_API_KEY` (Profile Icon > Settings > Apps > API Token ~ usually starts with pk_)
+   - and your `CLICKUP_TEAM_ID` (The ~7 digit number in the url when you are in the settings)
 
 2. **Configuration**:
    Add the following to your MCP configuration file:
@@ -36,7 +82,7 @@ The standout feature is the ability to retrieve individual tickets with their co
          "command": "npx",
          "args": [
            "-y",
-           "@hauptsache.net/clickup-mcp"
+           "@hauptsache.net/clickup-mcp@1"
          ],
          "env": {
            "CLICKUP_API_KEY": "your_api_key",
@@ -50,24 +96,24 @@ The standout feature is the ability to retrieve individual tickets with their co
    Replace `your_api_key` and `your_team_id` with your actual ClickUp credentials.
 
 3. **Connect Your AI Assistant**:
-   - **Claude Desktop**: Add this configuration in Settings > MCPs
+   - **Claude Desktop**: Add this configuration in Settings > Developer > Edit Config
    - **Windsurf**: Add to your MCP configuration file
    - **Cursor**: Configure through the MCP settings panel
 
-## Using with Your AI Assistant
 
-Once connected, your AI assistant can:
+## Available Tools
 
-1. **View Task Details**:
-   Ask: "Show me details for task CU-123456"
+Your AI assistant has access to these ClickUp capabilities:
 
-2. **Search Tasks**:
-   Ask: "Find tasks related to login functionality"
-
-3. **Check Your Todo List**:
-   Ask: "What tasks are assigned to me?"
-
-The AI will retrieve the information directly from ClickUp, including all text content, comments, and images, providing you with comprehensive assistance on your tasks.
+| Feature | Description |
+|---------|-------------|
+| **Task Retrieval** | Get complete task details including comments, images, and metadata |
+| **Advanced Search** | Find tasks by content, keywords, assignees, or project context |
+| **Task Management** | Create, update, and modify tasks with full field support |
+| **Time Tracking** | Log time entries and analyze time spent across projects |
+| **Comment System** | Read and add comments to maintain conversation context |
+| **Project Navigation** | Browse spaces, lists, and folders to understand structure |
+| **User Management** | Get current user info and manage task assignments |
 
 ## Configuration
 
@@ -86,6 +132,20 @@ The `searchTask` tool's description will dynamically adjust based on the detecte
 - If no primary language is detected, a more general recommendation for multilingual workspaces will be provided.
 
 This feature aims to improve search effectiveness when the language of user queries (often English) differs from the language of the tasks in ClickUp, without making the MCP itself perform translations. The responsibility for providing bilingual search terms still lies with the agent calling the MCP, but the MCP offers more specific advice if it has a language hint.
+
+## Performance & Limitations
+
+**Optimized for AI Workflows:**
+- **Image Processing**: Limited to 4 most recent images per task to prevent running into mcp client limitations (configurable via `MAX_IMAGES`)
+- **Search Scope**: Searches within the most recent 1000-3000 tasks to prevent running into rate limits (exact number varies by endpoint)
+- **Search Results**: Returns up to 50 most relevant matches to prevent flooding the agent with too many results
+
+**Current Scope:**
+- Focused on task-level operations rather than bulk workspace management
+- Optimized for conversational AI workflows rather than data migration
+- Designed for productivity enhancement, not administrative operations
+
+These limitations ensure reliable performance while covering the most common use cases for both development context and productivity management.
 
 ## License
 
