@@ -158,7 +158,11 @@ export function registerListTools(server: McpServer) {
 
   server.tool(
     "getListInfo",
-    "Gets comprehensive information about a list including description and available statuses. Use this before creating tasks to understand the list context and available statuses for new tasks.",
+    [
+      "Gets comprehensive information about a list including description and available statuses.",
+      "Use this before creating tasks to understand the list context and available statuses for new tasks.",
+      "IMPORTANT: The list description often contains valuable project context, requirements, or guidelines - read and consider this information when creating or updating tasks in this list."
+    ].join("\n"),
     {
       list_id: z.string().min(1).describe("The list ID to get information for")
     },

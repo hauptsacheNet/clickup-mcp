@@ -217,7 +217,12 @@ export function registerTimeToolsRead(server: McpServer) {
 export function registerTimeToolsWrite(server: McpServer) {
   server.tool(
     "createTimeEntry",
-    "Creates a time entry (books time) on a task for the current user. Use decimal hours (e.g., 0.25 for 15 minutes, 0.5 for 30 minutes, 2.5 for 2.5 hours)",
+    [
+      "Creates a time entry (books time) on a task for the current user.",
+      "Use decimal hours (e.g., 0.25 for 15 minutes, 0.5 for 30 minutes, 2.5 for 2.5 hours).",
+      "IMPORTANT: Before booking time, check the task's status - booking time on tasks in 'backlog', 'closed', or similar inactive states usually doesn't make sense.",
+      "Suggest moving the task to an active status like 'in progress' first."
+    ].join("\n"),
     {
       task_id: z.string().min(6).max(9).describe("The 6-9 character task ID to book time against"),
       hours: z.number().min(0.01).max(24).describe("Hours to book (decimal format, e.g., 0.25 = 15min, 1.5 = 1h 30min)"),

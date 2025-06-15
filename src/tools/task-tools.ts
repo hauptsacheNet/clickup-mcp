@@ -197,7 +197,12 @@ export function registerTaskToolsRead(server: McpServer, userData: any) {
 export function registerTaskToolsWrite(server: McpServer, userData: any) {
   server.tool(
     "addComment",
-    "Adds a comment to a specific task",
+    [
+      "Adds a comment to a specific task.",
+      "BEST PRACTICES: Include progress information and current status updates.",
+      "If external links are provided, verify they are publicly accessible and incorporate relevant information from those links into the comment.",
+      "Check the task's current status - if it's in 'backlog' or similar inactive states, suggest moving it to an active status like 'in progress' when work is being done."
+    ].join("\n"),
     {
       task_id: z.string().min(6).max(9).describe("The 6-9 character task ID to comment on"),
       comment: z.string().min(1).describe("The comment text to add to the task"),
@@ -257,7 +262,12 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
 
   server.tool(
     "updateTask",
-    "Updates various aspects of an existing task. Use getListInfo first to see valid status options.",
+    [
+      "Updates various aspects of an existing task.",
+      "Use getListInfo first to see valid status options.",
+      "IMPORTANT: When updating tasks (especially when booking time or adding progress), ensure the status makes sense for the work being done - tasks in 'backlog' or 'closed' states usually shouldn't have active work.",
+      "Suggest appropriate status transitions."
+    ].join("\n"),
     {
       task_id: z.string().min(6).max(9).describe("The 6-9 character task ID to update"),
       name: taskNameSchema.optional(),
@@ -358,7 +368,12 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
 
   server.tool(
     "createTask",
-    "Creates a new task in a specific list and assigns it to specified users (defaults to current user). Use getListInfo first to understand the list context and available statuses.",
+    [
+      "Creates a new task in a specific list and assigns it to specified users (defaults to current user).",
+      "IMPORTANT: Before creating, always search for similar existing tasks first using searchTasks to avoid duplicates - ask the user if they want to use an existing task instead.",
+      "If related tasks exist, reference them with links in the description (format: https://app.clickup.com/t/TASK_ID).",
+      "Use getListInfo first to understand the list context and available statuses."
+    ].join("\n"),
     {
       list_id: z.string().min(1).describe("The ID of the list where the task will be created"),
       name: taskNameSchema,
