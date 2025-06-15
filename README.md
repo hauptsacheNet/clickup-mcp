@@ -2,6 +2,9 @@
 
 Transform your AI assistant into a powerful ClickUp integration for both **agentic coding** and **productivity management**. This Model Context Protocol (MCP) server enables Claude, Windsurf, Cursor, and other AI assistants to seamlessly interact with your ClickUp workspace.
 
+> **⚠️ Experimental Software Notice**  
+> This MCP is experimental and under active development. While implemented with great care to prevent data loss through append-only description updates and other safety measures, it cannot be guaranteed to be completely safe. Please use with caution, especially in production environments. Always test in a non-critical workspace first. 🧪
+
 ## Two Powerful Use Cases
 
 ### 🛠️ **For Developers & Agentic Coding**
@@ -49,22 +52,30 @@ Turn natural language into powerful ClickUp actions:
 ## Key Features
 
 ### 🔍 **Intelligent Search**
-Advanced search across task names, descriptions, comments, and metadata with fuzzy matching and multi-language support.
+- Fuzzy matching across task names, descriptions, and comments
+- Multi-language search support for international teams
+- Filter by assignees, projects, status, and metadata
 
 ### 💬 **Complete Context**
-Access full comment histories, task descriptions, and embedded images to understand the complete story behind any task.
+- Full comment histories and team discussions
+- Task descriptions with embedded images  
+- List descriptions and project guidelines
+- Access to complete task history and decisions
 
 ### ⏱️ **Time Tracking**
-Create time entries, view time logs, and analyze where your time is being spent across projects and tasks.
-
-### 🖼️ **Visual Content**
-View images embedded in task descriptions and comments, giving your AI assistant visual context for better assistance.
+- Log time entries with descriptions
+- View historical time logs and entries
+- Query time entries by task or date range
 
 ### 📋 **Task Management**
-Create, update, and manage tasks with rich metadata including priorities, due dates, assignees, tags, and custom fields.
+- Create and update tasks with markdown descriptions
+- Add comments and collaborate with team members
+- Manage priorities, due dates, assignees, and tags
+- Handle time estimates and custom field values
 
-### 🏗️ **Project Organization**
-Navigate spaces, lists, and folders to understand your project structure and get relevant context.
+### 🔒 **Safety Features**
+- **Append-Only Descriptions**: Description fields are never overwritten - new content is safely appended with timestamps
+- **Normal Field Updates**: Status, priority, assignees, tags, and dates can be updated normally (easily revertible through ClickUp's history)
 
 ## Setup for Claude Desktop, Windsurf, or Cursor
 
