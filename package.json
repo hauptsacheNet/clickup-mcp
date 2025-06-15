@@ -1,6 +1,6 @@
 {
   "name": "@hauptsache.net/clickup-mcp",
-  "version": "1.0.5",
+  "version": "1.1.0",
   "description": "A minimal implementation of a Model Context Protocol (MCP) server for ClickUp integration",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
