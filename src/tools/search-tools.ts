@@ -1,7 +1,7 @@
 import {McpServer} from "@modelcontextprotocol/sdk/server/mcp.js";
 import {z} from "zod";
 import {CONFIG} from "../shared/config";
-import {isTaskId, getTaskSearchIndex} from "../shared/utils";
+import {isTaskId, getTaskSearchIndex, getCurrentUser} from "../shared/utils";
 import {generateTaskMetadata} from "./task-tools";
 
 const MAX_SEARCH_RESULTS = 50;
@@ -52,22 +52,8 @@ export function registerSearchTools(server: McpServer) {
       let assignees: string[] | undefined;
       if (assigned_to_me) {
         try {
-          const userResponse = await fetch("https://api.clickup.com/api/v2/user", {
-            headers: { Authorization: CONFIG.apiKey },
-          });
-          if (userResponse.ok) {
-            const userData = await userResponse.json();
-            assignees = [userData.user.id];
-          } else {
-            return {
-              content: [
-                {
-                  type: "text" as const,
-                  text: "Error: Could not fetch current user information.",
-                },
-              ],
-            };
-          }
+          const userData = await getCurrentUser();
+          assignees = [userData.user.id];
         } catch (error) {
           return {
             content: [

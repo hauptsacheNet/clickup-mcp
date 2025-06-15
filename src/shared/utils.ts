@@ -13,6 +13,32 @@ export function isTaskId(str: string): boolean {
   return /^[a-z0-9]{6,9}$/i.test(str);
 }
 
+// Cache for current user info to avoid repeated API calls
+let cachedUserData: any = null;
+
+/**
+ * Get current authenticated user information from ClickUp API
+ * Caches the result after first successful fetch to avoid repeated API calls during the session
+ */
+export async function getCurrentUser() {
+  // Return cached data if available
+  if (cachedUserData) {
+    return cachedUserData;
+  }
+
+  const userResponse = await fetch("https://api.clickup.com/api/v2/user", {
+    headers: { Authorization: CONFIG.apiKey },
+  });
+
+  if (!userResponse.ok) {
+    throw new Error(`Error fetching user info: ${userResponse.status} ${userResponse.statusText}`);
+  }
+
+  // Cache the result for future calls
+  cachedUserData = await userResponse.json();
+  return cachedUserData;
+}
+
 /**
  * Limits the number of images in the content array, replacing excess images with text placeholders
  * Prioritizes keeping the most recent images (assumes content is ordered with newest items last)

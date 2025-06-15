@@ -100,20 +100,46 @@ Navigate spaces, lists, and folders to understand your project structure and get
    - **Windsurf**: Add to your MCP configuration file
    - **Cursor**: Configure through the MCP settings panel
 
+## MCP Modes & Available Tools
 
-## Available Tools
+The ClickUp MCP supports three operational modes to balance functionality, security, and performance:
 
-Your AI assistant has access to these ClickUp capabilities:
+- **🚀 `read-minimal`**: Perfect for AI coding assistants and context gathering
+- **📖 `read`**: Full read-only access for project exploration and workflow understanding  
+- **✏️ `write`** (Default): Complete functionality for task management and productivity workflows
 
-| Feature | Description |
-|---------|-------------|
-| **Task Retrieval** | Get complete task details including comments, images, and metadata |
-| **Advanced Search** | Find tasks by content, keywords, assignees, or project context |
-| **Task Management** | Create, update, and modify tasks with full field support |
-| **Time Tracking** | Log time entries and analyze time spent across projects |
-| **Comment System** | Read and add comments to maintain conversation context |
-| **Project Navigation** | Browse spaces, lists, and folders to understand structure |
-| **User Management** | Get current user info and manage task assignments |
+| Tool | read-minimal | read | write | Description |
+|------|:------------:|:----:|:-----:|-------------|
+| `getTaskById` | ✅ | ✅ | ✅ | Get complete task details including comments, images, and metadata |
+| `searchTasks` | ✅ | ✅ | ✅ | Find tasks by content, keywords, assignees, or project context |
+| `listSpaces` | ❌ | ✅ | ✅ | Browse workspace structure and project organization |
+| `listLists` | ❌ | ✅ | ✅ | Browse lists and folders within spaces |
+| `getListInfo` | ❌ | ✅ | ✅ | Get list details and available statuses for task creation |
+| `getTimeEntries` | ❌ | ✅ | ✅ | View time entries and analyze time spent across projects |
+| `createTask` | ❌ | ❌ | ✅ | Create new tasks with full field support |
+| `updateTask` | ❌ | ❌ | ✅ | Update existing tasks (status, assignees, priority, etc.) |
+| `addComment` | ❌ | ❌ | ✅ | Add comments to tasks for collaboration |
+| `createTimeEntry` | ❌ | ❌ | ✅ | Log time entries for task tracking |
+
+### Setting the Mode
+
+Add the mode to your MCP configuration:
+
+```json
+{
+  "mcpServers": {
+    "clickup": {
+      "command": "npx",
+      "args": ["-y", "@hauptsache.net/clickup-mcp@1"],
+      "env": {
+        "CLICKUP_API_KEY": "your_api_key",
+        "CLICKUP_TEAM_ID": "your_team_id",
+        "CLICKUP_MCP_MODE": "read"
+      }
+    }
+  }
+}
+```
 
 ## Configuration
 
@@ -121,6 +147,7 @@ This MCP server can be configured using environment variables:
 
 - `CLICKUP_API_KEY`: (Required) Your ClickUp API key.
 - `CLICKUP_TEAM_ID`: (Required) Your ClickUp Team ID (formerly Workspace ID).
+- `CLICKUP_MCP_MODE`: (Optional) Controls which tools are available. Options: `read-minimal`, `read`, `write` (default).
 - `MAX_IMAGES`: (Optional) The maximum number of images to return for a task in `getTaskById`. Defaults to 4.
 - `CLICKUP_PRIMARY_LANGUAGE`: (Optional) A hint for the primary language used in your ClickUp tasks (e.g., "de" for German, "en" for English). This helps the `searchTask` tool provide more tailored guidance in its description for multilingual searches.
 - `LANG`: (Optional) If `CLICKUP_PRIMARY_LANGUAGE` is not set, the MCP will check this standard environment variable (e.g., "en_US.UTF-8", "de_DE") as a fallback to infer the primary language.

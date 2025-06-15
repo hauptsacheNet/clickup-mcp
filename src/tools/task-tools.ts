@@ -3,7 +3,7 @@ import { z } from "zod";
 import { processClickUpMarkdown, processClickUpText } from "../clickup-text";
 import { ContentBlock, DatedContentEvent } from "../shared/types";
 import { CONFIG } from "../shared/config";
-import { isTaskId, limitImages, getSpaceDetails } from "../shared/utils";
+import { isTaskId, limitImages, getSpaceDetails, getCurrentUser } from "../shared/utils";
 
 // Shared schemas for task parameters
 const taskNameSchema = z.string().min(1).describe("The name/title of the task");
@@ -13,19 +13,12 @@ const taskDueDateSchema = z.string().optional().describe("Optional due date as I
 const taskStartDateSchema = z.string().optional().describe("Optional start date as ISO date string (e.g., '2024-10-06T09:00:00+02:00')");
 const taskTimeEstimateSchema = z.number().optional().describe("Optional time estimate in hours (will be converted to milliseconds)");
 const taskTagsSchema = z.array(z.string()).optional().describe("Optional array of tag names");
-const taskAssigneesSchema = z.array(z.string()).optional().describe("Optional array of user IDs to assign to the task");
 
 // Shared utility functions
-async function getCurrentUser() {
-  const userResponse = await fetch("https://api.clickup.com/api/v2/user", {
-    headers: { Authorization: CONFIG.apiKey },
-  });
 
-  if (!userResponse.ok) {
-    throw new Error(`Error fetching user info: ${userResponse.status} ${userResponse.statusText}`);
-  }
-
-  return await userResponse.json();
+function createAssigneeDescription(userData: any): string {
+  const user = userData.user;
+  return `Optional array of user IDs to assign to the task (defaults to current user: ${user.username} - ${user.email} (${user.id}))`;
 }
 
 function convertPriorityToNumber(priority: string): number {
@@ -103,7 +96,7 @@ function buildTaskRequestBody(params: {
   return requestBody;
 }
 
-function formatTaskResponse(task: any, operation: 'created' | 'updated', params: any, userData?: any): string[] {
+function formatTaskResponse(task: any, operation: 'created' | 'updated', params: any, userData: any): string[] {
   const responseLines = [
     `Task ${operation} successfully!`,
     `task_id: ${task.id}`,
@@ -112,7 +105,7 @@ function formatTaskResponse(task: any, operation: 'created' | 'updated', params:
     `status: ${task.status?.status || 'Unknown'}`,
     `assignees: ${task.assignees?.map((a: any) => `${a.username} (${a.id})`).join(', ') || 'None'}`,
     ...(operation === 'created' && params.list_id ? [`list_id: ${params.list_id}`] : []),
-    ...(operation === 'updated' && userData ? [
+    ...(operation === 'updated' ? [
       `updated_by: ${userData.user.username}`,
       `updated_at: ${timestampToIso(Date.now())}`
     ] : [])
@@ -147,7 +140,7 @@ function formatTaskResponse(task: any, operation: 'created' | 'updated', params:
   return responseLines;
 }
 
-export function registerTaskTools(server: McpServer) {
+export function registerTaskToolsRead(server: McpServer, userData: any) {
   server.tool(
     "getTaskById",
     "Get a Clickup task with images and comments by ID",
@@ -199,7 +192,9 @@ export function registerTaskTools(server: McpServer) {
     }
   );
 
+}
 
+export function registerTaskToolsWrite(server: McpServer, userData: any) {
   server.tool(
     "addComment",
     "Adds a comment to a specific task",
@@ -273,7 +268,7 @@ export function registerTaskTools(server: McpServer) {
       start_date: taskStartDateSchema,
       time_estimate: taskTimeEstimateSchema,
       tags: taskTagsSchema.describe("Optional array of tag names (will replace existing tags)"),
-      assignees: taskAssigneesSchema
+      assignees: z.array(z.string()).optional().describe(createAssigneeDescription(userData))
     },
     async ({ task_id, name, description, status, priority, due_date, start_date, time_estimate, tags, assignees }) => {
       try {
@@ -374,7 +369,7 @@ export function registerTaskTools(server: McpServer) {
       time_estimate: taskTimeEstimateSchema,
       tags: taskTagsSchema,
       parent: z.string().optional().describe("Optional parent task ID to create this as a subtask"),
-      assignees: taskAssigneesSchema.describe("Optional array of user IDs to assign to the task (defaults to current user)")
+      assignees: z.array(z.string()).optional().describe(createAssigneeDescription(userData))
     },
     async ({ list_id, name, description, priority, due_date, start_date, time_estimate, tags, parent, assignees }) => {
       try {
@@ -403,7 +398,7 @@ export function registerTaskTools(server: McpServer) {
         
         const responseLines = formatTaskResponse(createdTask, 'created', { 
           list_id, name, description, priority, due_date, start_date, time_estimate, tags, parent, assignees 
-        });
+        }, userData);
 
         return {
           content: [
@@ -427,49 +422,6 @@ export function registerTaskTools(server: McpServer) {
       }
     }
   );
-
-  server.tool(
-    "getCurrentUser",
-    "Gets information about the current authenticated user",
-    async () => {
-      try {
-        const userData = await getCurrentUser();
-        const user = userData.user;
-
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: [
-                `Current User Information:`,
-                `user_id: ${user.id}`,
-                `username: ${user.username}`,
-                `email: ${user.email}`,
-                `color: ${user.color || 'None'}`,
-                `profile_picture: ${user.profilePicture || 'None'}`,
-                `initials: ${user.initials || 'N/A'}`,
-                `week_start_day: ${user.week_start_day || 0}`,
-                `global_font_support: ${user.global_font_support || false}`,
-                `timezone: ${user.timezone || 'Unknown'}`
-              ].join('\n')
-            }
-          ],
-        };
-
-      } catch (error) {
-        console.error('Error fetching current user:', error);
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error fetching user info: ${error instanceof Error ? error.message : 'Unknown error'}`,
-            },
-          ],
-        };
-      }
-    }
-  );
-
 }
 
 

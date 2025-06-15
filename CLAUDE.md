@@ -1,0 +1,3 @@
+- ClickUp api documentation is available here: https://developer.clickup.com/reference/gettasks
+- Use "npm run cli" to test mcp calls.
+- Always use console.error to prevent writing log messages to stdout.

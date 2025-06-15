@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 import 'dotenv/config'; // Load .env file
 import { z } from "zod";
-import { server } from "./index";
+import { serverPromise } from "./index";
 
 async function main() {
+  // Wait for server initialization to complete
+  const server = await serverPromise;
   const args = process.argv.slice(2);
   
   if (args.length < 1) {

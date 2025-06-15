@@ -33,85 +33,7 @@ function timestampToIso(timestamp: number): string {
   return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}${timezoneOffset}`;
 }
 
-export function registerTimeTools(server: McpServer) {
-  server.tool(
-    "createTimeEntry",
-    "Creates a time entry (books time) on a task for the current user. Use decimal hours (e.g., 0.25 for 15 minutes, 0.5 for 30 minutes, 2.5 for 2.5 hours)",
-    {
-      task_id: z.string().min(6).max(9).describe("The 6-9 character task ID to book time against"),
-      hours: z.number().min(0.01).max(24).describe("Hours to book (decimal format, e.g., 0.25 = 15min, 1.5 = 1h 30min)"),
-      description: z.string().optional().describe("Optional description for the time entry"),
-      start_time: z.string().optional().describe("Optional start time as ISO date string (e.g., '2024-10-06T09:00:00+02:00', defaults to current time)")
-    },
-    async ({ task_id, hours, description, start_time }) => {
-      try {
-        // Convert hours to milliseconds (ClickUp API uses milliseconds)
-        const durationMs = Math.round(hours * 60 * 60 * 1000);
-
-        // Convert ISO date to timestamp if provided, otherwise use current time
-        const startTimeMs = start_time ? isoToTimestamp(start_time) : Date.now();
-
-        const requestBody = {
-          tid: task_id,
-          start: startTimeMs,
-          duration: durationMs,
-          ...(description && { description })
-        };
-
-        const response = await fetch(`https://api.clickup.com/api/v2/team/${CONFIG.teamId}/time_entries`, {
-          method: 'POST',
-          headers: { 
-            Authorization: CONFIG.apiKey,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(requestBody)
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(`Error creating time entry: ${response.status} ${response.statusText} - ${JSON.stringify(errorData)}`);
-        }
-
-        const timeEntry = await response.json();
-
-        // Format duration for display
-        const displayHours = Math.floor(hours);
-        const displayMinutes = Math.round((hours - displayHours) * 60);
-        const durationDisplay = displayHours > 0 ? 
-          `${displayHours}h ${displayMinutes}m` : 
-          `${displayMinutes}m`;
-
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: [
-                `Time entry created successfully!`,
-                `entry_id: ${timeEntry.data?.id || 'N/A'}`,
-                `task_id: ${task_id}`,
-                `duration: ${durationDisplay}`,
-                `start_time: ${timestampToIso(startTimeMs)}`,
-                ...(description ? [`description: ${description}`] : []),
-                `user: ${timeEntry.data?.user?.username || 'Current user'}`
-              ].join('\n')
-            }
-          ],
-        };
-
-      } catch (error) {
-        console.error('Error creating time entry:', error);
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error creating time entry: ${error instanceof Error ? error.message : 'Unknown error'}`,
-            },
-          ],
-        };
-      }
-    }
-  );
-
+export function registerTimeToolsRead(server: McpServer) {
   server.tool(
     "getTimeEntries",
     "Gets time entries for a specific task or all user's time entries. Returns last 30 days by default if no dates specified.",
@@ -284,6 +206,86 @@ export function registerTimeTools(server: McpServer) {
             {
               type: "text",
               text: `Error fetching time entries: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            },
+          ],
+        };
+      }
+    }
+  );
+}
+
+export function registerTimeToolsWrite(server: McpServer) {
+  server.tool(
+    "createTimeEntry",
+    "Creates a time entry (books time) on a task for the current user. Use decimal hours (e.g., 0.25 for 15 minutes, 0.5 for 30 minutes, 2.5 for 2.5 hours)",
+    {
+      task_id: z.string().min(6).max(9).describe("The 6-9 character task ID to book time against"),
+      hours: z.number().min(0.01).max(24).describe("Hours to book (decimal format, e.g., 0.25 = 15min, 1.5 = 1h 30min)"),
+      description: z.string().optional().describe("Optional description for the time entry"),
+      start_time: z.string().optional().describe("Optional start time as ISO date string (e.g., '2024-10-06T09:00:00+02:00', defaults to current time)")
+    },
+    async ({ task_id, hours, description, start_time }) => {
+      try {
+        // Convert hours to milliseconds (ClickUp API uses milliseconds)
+        const durationMs = Math.round(hours * 60 * 60 * 1000);
+
+        // Convert ISO date to timestamp if provided, otherwise use current time
+        const startTimeMs = start_time ? isoToTimestamp(start_time) : Date.now();
+
+        const requestBody = {
+          tid: task_id,
+          start: startTimeMs,
+          duration: durationMs,
+          ...(description && { description })
+        };
+
+        const response = await fetch(`https://api.clickup.com/api/v2/team/${CONFIG.teamId}/time_entries`, {
+          method: 'POST',
+          headers: { 
+            Authorization: CONFIG.apiKey,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(requestBody)
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(`Error creating time entry: ${response.status} ${response.statusText} - ${JSON.stringify(errorData)}`);
+        }
+
+        const timeEntry = await response.json();
+
+        // Format duration for display
+        const displayHours = Math.floor(hours);
+        const displayMinutes = Math.round((hours - displayHours) * 60);
+        const durationDisplay = displayHours > 0 ? 
+          `${displayHours}h ${displayMinutes}m` : 
+          `${displayMinutes}m`;
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: [
+                `Time entry created successfully!`,
+                `entry_id: ${timeEntry.data?.id || 'N/A'}`,
+                `task_id: ${task_id}`,
+                `duration: ${durationDisplay}`,
+                `start_time: ${timestampToIso(startTimeMs)}`,
+                ...(description ? [`description: ${description}`] : []),
+                `user: ${timeEntry.data?.user?.username || 'Current user'}`
+              ].join('\n')
+            }
+          ],
+        };
+
+      } catch (error) {
+        console.error('Error creating time entry:', error);
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Error creating time entry: ${error instanceof Error ? error.message : 'Unknown error'}`,
             },
           ],
         };
