@@ -9,7 +9,7 @@ import { getCurrentUser } from "./shared/utils";
 import { registerTaskToolsRead, registerTaskToolsWrite } from "./tools/task-tools";
 import { registerSearchTools } from "./tools/search-tools";
 import { registerSpaceTools } from "./tools/space-tools";
-import { registerListTools } from "./tools/list-tools";
+import { registerListToolsRead, registerListToolsWrite } from "./tools/list-tools";
 import { registerTimeToolsRead, registerTimeToolsWrite } from "./tools/time-tools";
 
 // Create an MCP server
@@ -36,7 +36,7 @@ async function initializeServer() {
     registerTaskToolsRead(server, userData);
     registerSearchTools(server);
     registerSpaceTools(server);
-    registerListTools(server);
+    registerListToolsRead(server);
     registerTimeToolsRead(server);
   } else if (CONFIG.mode === 'write') {
     // All tools (full functionality)
@@ -44,7 +44,8 @@ async function initializeServer() {
     registerTaskToolsWrite(server, userData);
     registerSearchTools(server);
     registerSpaceTools(server);
-    registerListTools(server);
+    registerListToolsRead(server);
+    registerListToolsWrite(server);
     registerTimeToolsRead(server);
     registerTimeToolsWrite(server);
   }

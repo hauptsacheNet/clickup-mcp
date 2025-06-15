@@ -59,9 +59,6 @@ function buildTaskRequestBody(params: {
     requestBody.name = params.name;
   }
 
-  if (params.description !== undefined) {
-    requestBody.description = params.description;
-  }
 
   if (params.priority !== undefined) {
     requestBody.priority = convertPriorityToNumber(params.priority);
@@ -265,13 +262,14 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
     [
       "Updates various aspects of an existing task.",
       "Use getListInfo first to see valid status options.",
+      "SAFETY FEATURE: Description updates are APPEND-ONLY to prevent data loss - existing content is preserved.",
       "IMPORTANT: When updating tasks (especially when booking time or adding progress), ensure the status makes sense for the work being done - tasks in 'backlog' or 'closed' states usually shouldn't have active work.",
       "Suggest appropriate status transitions."
     ].join("\n"),
     {
       task_id: z.string().min(6).max(9).describe("The 6-9 character task ID to update"),
       name: taskNameSchema.optional(),
-      description: taskDescriptionSchema,
+      append_description: z.string().optional().describe("Optional markdown content to APPEND to existing task description (preserves existing content for safety)"),
       status: z.string().optional().describe("Optional new status name - use getListInfo to see valid options"),
       priority: taskPrioritySchema,
       due_date: taskDueDateSchema,
@@ -280,12 +278,12 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
       tags: taskTagsSchema.describe("Optional array of tag names (will replace existing tags)"),
       assignees: z.array(z.string()).optional().describe(createAssigneeDescription(userData))
     },
-    async ({ task_id, name, description, status, priority, due_date, start_date, time_estimate, tags, assignees }) => {
+    async ({ task_id, name, append_description, status, priority, due_date, start_date, time_estimate, tags, assignees }) => {
       try {
         const userData = await getCurrentUser();
 
-        // Get task details to get current state
-        const taskResponse = await fetch(`https://api.clickup.com/api/v2/task/${task_id}`, {
+        // Get task details including current markdown description
+        const taskResponse = await fetch(`https://api.clickup.com/api/v2/task/${task_id}?include_markdown_description=true`, {
           headers: { Authorization: CONFIG.apiKey },
         });
 
@@ -295,10 +293,24 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
 
         const taskData = await taskResponse.json();
 
-        // Build update body using shared utility
+        // Handle append-only description update with markdown support
+        let finalDescription: string | undefined;
+        if (append_description) {
+          const currentDescription = taskData.markdown_description || "";
+          const timestamp = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+          const separator = currentDescription.trim() ? "\n\n---\n" : "";
+          finalDescription = currentDescription + separator + `**Edit (${timestamp}):** ${append_description}`;
+        }
+
+        // Build update body using shared utility (without description since we handle it separately)
         const updateBody = buildTaskRequestBody({
-          name, description, priority, due_date, start_date, time_estimate, tags, assignees
+          name, priority, due_date, start_date, time_estimate, tags, assignees
         });
+
+        // Add markdown description if we have content to append
+        if (finalDescription !== undefined) {
+          updateBody.markdown_description = finalDescription;
+        }
 
         // Add status field (not handled by buildTaskRequestBody since it's update-specific)
         if (status !== undefined) {
@@ -340,7 +352,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
         const updatedTask = await updateResponse.json();
 
         const responseLines = formatTaskResponse(updatedTask, 'updated', { 
-          name, description, status, priority, due_date, start_date, time_estimate, tags, assignees 
+          name, append_description, status, priority, due_date, start_date, time_estimate, tags, assignees 
         }, userData);
 
         return {
@@ -372,12 +384,13 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
       "Creates a new task in a specific list and assigns it to specified users (defaults to current user).",
       "IMPORTANT: Before creating, always search for similar existing tasks first using searchTasks to avoid duplicates - ask the user if they want to use an existing task instead.",
       "If related tasks exist, reference them with links in the description (format: https://app.clickup.com/t/TASK_ID).",
-      "Use getListInfo first to understand the list context and available statuses."
+      "Use getListInfo first to understand the list context and available statuses.",
+      "Task descriptions support full markdown formatting including **bold**, *italic*, lists, links, and code blocks."
     ].join("\n"),
     {
       list_id: z.string().min(1).describe("The ID of the list where the task will be created"),
       name: taskNameSchema,
-      description: taskDescriptionSchema,
+      description: z.string().optional().describe("Optional markdown description for the task - supports full markdown formatting"),
       priority: taskPrioritySchema,
       due_date: taskDueDateSchema,
       start_date: taskStartDateSchema,
@@ -392,8 +405,13 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
         const currentUserId = userData.user.id;
 
         const requestBody = buildTaskRequestBody({
-          name, description, priority, due_date, start_date, time_estimate, tags, assignees, parent
+          name, priority, due_date, start_date, time_estimate, tags, assignees, parent
         }, currentUserId);
+
+        // Add markdown description if provided
+        if (description) {
+          requestBody.markdown_description = description;
+        }
 
         const response = await fetch(`https://api.clickup.com/api/v2/list/${list_id}/task`, {
           method: 'POST',

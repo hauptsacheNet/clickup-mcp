@@ -116,8 +116,9 @@ The ClickUp MCP supports three operational modes to balance functionality, secur
 | `listLists` | ❌ | ✅ | ✅ | Browse lists and folders within spaces |
 | `getListInfo` | ❌ | ✅ | ✅ | Get list details and available statuses for task creation |
 | `getTimeEntries` | ❌ | ✅ | ✅ | View time entries and analyze time spent across projects |
-| `createTask` | ❌ | ❌ | ✅ | Create new tasks with full field support |
-| `updateTask` | ❌ | ❌ | ✅ | Update existing tasks (status, assignees, priority, etc.) |
+| `createTask` | ❌ | ❌ | ✅ | Create new tasks with full markdown support |
+| `updateTask` | ❌ | ❌ | ✅ | Update tasks (status, priority, assignees, etc.) with **SAFE APPEND-ONLY** descriptions |
+| `updateListInfo` | ❌ | ❌ | ✅ | **SAFE APPEND-ONLY** updates to list descriptions (preserves existing content) |
 | `addComment` | ❌ | ❌ | ✅ | Add comments to tasks for collaboration |
 | `createTimeEntry` | ❌ | ❌ | ✅ | Log time entries for task tracking |
 
@@ -159,6 +160,50 @@ The `searchTask` tool's description will dynamically adjust based on the detecte
 - If no primary language is detected, a more general recommendation for multilingual workspaces will be provided.
 
 This feature aims to improve search effectiveness when the language of user queries (often English) differs from the language of the tasks in ClickUp, without making the MCP itself perform translations. The responsibility for providing bilingual search terms still lies with the agent calling the MCP, but the MCP offers more specific advice if it has a language hint.
+
+## Markdown Formatting Support
+
+Task descriptions and list documentation support full markdown formatting:
+
+### Examples
+
+**Task Creation with Markdown:**
+```
+Create a task called "API Integration" with description:
+# API Integration Requirements
+
+## Authentication
+- Implement OAuth 2.0 flow
+- Add JWT token validation
+- **Priority**: High security standards
+
+## Endpoints
+1. `/api/users` - User management
+2. `/api/data` - Data retrieval
+3. `/api/webhook` - Event notifications
+
+## Testing
+- [ ] Unit tests for auth flow
+- [ ] Integration tests
+- [ ] Load testing with 1000+ concurrent users
+
+> **Note**: This replaces the legacy REST implementation
+
+See related task: https://app.clickup.com/t/abc123
+```
+
+**Append-Only Updates (Safe):**
+When updating task descriptions, content is safely appended:
+```markdown
+[Existing task description content]
+
+---
+**Edit (2024-01-15):** Added new acceptance criteria based on client feedback:
+- Must support mobile responsive design
+- Performance requirement: < 2s load time
+```
+
+This ensures no existing content is ever lost while maintaining a clear audit trail.
 
 ## Performance & Limitations
 

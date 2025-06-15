@@ -3,7 +3,7 @@ import { z } from "zod";
 import { CONFIG } from "../shared/config";
 import { ContentBlock } from "../shared/types";
 
-export function registerListTools(server: McpServer) {
+export function registerListToolsRead(server: McpServer) {
   server.tool(
     "listLists",
     "Lists all lists and folders in a space. They might also be referred to as boards or tables. Shows both direct lists (folderless) and folders containing lists. If folder_id is provided, lists only the lists within that specific folder.",
@@ -168,8 +168,8 @@ export function registerListTools(server: McpServer) {
     },
     async ({ list_id }) => {
       try {
-        // Get list details including statuses
-        const listResponse = await fetch(`https://api.clickup.com/api/v2/list/${list_id}`, {
+        // Get list details including statuses (try to get markdown content)
+        const listResponse = await fetch(`https://api.clickup.com/api/v2/list/${list_id}?include_markdown_description=true`, {
           headers: { Authorization: CONFIG.apiKey },
         });
 
@@ -189,9 +189,10 @@ export function registerListTools(server: McpServer) {
           `task_count: ${listData.task_count || 0}`,
         ];
 
-        // Add description if available
-        if (listData.content) {
-          responseLines.push(`description: ${listData.content}`);
+        // Add description if available (check both content and markdown fields)
+        const description = listData.markdown_description || listData.markdown_content || listData.content;
+        if (description) {
+          responseLines.push(`description: ${description}`);
         }
 
         // Add available statuses
@@ -232,6 +233,79 @@ export function registerListTools(server: McpServer) {
             {
               type: "text",
               text: `Error getting list info: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            },
+          ],
+        };
+      }
+    }
+  );
+}
+
+export function registerListToolsWrite(server: McpServer) {
+  server.tool(
+    "updateListInfo",
+    [
+      "Appends documentation or context to a list's description.",
+      "SAFETY FEATURE: Description updates are APPEND-ONLY to prevent data loss - existing content is preserved.",
+      "Use this to add project context, requirements, or guidelines that LLMs should consider when working with tasks in this list.",
+      "Content is appended in markdown format with timestamp for tracking changes."
+    ].join("\n"),
+    {
+      list_id: z.string().min(1).describe("The list ID to update"),
+      append_description: z.string().min(1).describe("Markdown content to APPEND to existing list description (preserves existing content for safety)")
+    },
+    async ({ list_id, append_description }) => {
+      try {
+        // Get current list info including description (try to get markdown content)
+        const listResponse = await fetch(`https://api.clickup.com/api/v2/list/${list_id}?include_markdown_description=true`, {
+          headers: { Authorization: CONFIG.apiKey },
+        });
+
+        if (!listResponse.ok) {
+          throw new Error(`Error fetching list: ${listResponse.status} ${listResponse.statusText}`);
+        }
+
+        const listData = await listResponse.json();
+
+        // Handle append-only description update with markdown support
+        const currentDescription = listData.markdown_description || listData.markdown_content || listData.content || "";
+        const timestamp = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+        const separator = currentDescription.trim() ? "\n\n---\n" : "";
+        const finalDescription = currentDescription + separator + `**Edit (${timestamp}):** ${append_description}`;
+
+        // Update the list description using markdown_content
+        const updateResponse = await fetch(`https://api.clickup.com/api/v2/list/${list_id}`, {
+          method: 'PUT',
+          headers: {
+            Authorization: CONFIG.apiKey,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            markdown_content: finalDescription
+          })
+        });
+
+        if (!updateResponse.ok) {
+          const errorData = await updateResponse.json().catch(() => ({}));
+          throw new Error(`Error updating list: ${updateResponse.status} ${updateResponse.statusText} - ${JSON.stringify(errorData)}`);
+        }
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Successfully appended content to list "${listData.name}". The new content has been added with timestamp (${timestamp}) while preserving existing description.`,
+            },
+          ],
+        };
+
+      } catch (error) {
+        console.error('Error updating list info:', error);
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Error updating list info: ${error instanceof Error ? error.message : String(error)}`,
             },
           ],
         };
