@@ -212,3 +212,85 @@ function createFuseIndex(tasks: any[]): Fuse<any> {
     minMatchCharLength: 2,
   });
 }
+
+// ===== LINK UTILITIES =====
+
+/**
+ * Generate a ClickUp task URL from a task ID
+ */
+export function generateTaskUrl(taskId: string): string {
+  return `https://app.clickup.com/t/${taskId}`;
+}
+
+/**
+ * Generate a ClickUp list URL from a list ID
+ */
+export function generateListUrl(listId: string): string {
+  return `https://app.clickup.com/v/l/${listId}`;
+}
+
+/**
+ * Generate a ClickUp space URL from a space ID
+ */
+export function generateSpaceUrl(spaceId: string): string {
+  return `https://app.clickup.com/v/s/${spaceId}`;
+}
+
+/**
+ * Generate a ClickUp folder URL from a folder ID
+ */
+export function generateFolderUrl(folderId: string): string {
+  return `https://app.clickup.com/v/f/${folderId}`;
+}
+
+/**
+ * Format a ClickUp task link as markdown
+ */
+export function formatTaskLink(taskId: string, taskName?: string): string {
+  const url = generateTaskUrl(taskId);
+  const displayText = taskName ? `${taskName} (${taskId})` : taskId;
+  return `[${displayText}](${url})`;
+}
+
+/**
+ * Format a ClickUp list link as markdown
+ */
+export function formatListLink(listId: string, listName?: string): string {
+  const url = generateListUrl(listId);
+  const displayText = listName ? `${listName} (${listId})` : listId;
+  return `[${displayText}](${url})`;
+}
+
+/**
+ * Format a ClickUp space link as markdown
+ */
+export function formatSpaceLink(spaceId: string, spaceName?: string): string {
+  const url = generateSpaceUrl(spaceId);
+  const displayText = spaceName ? `${spaceName} (${spaceId})` : spaceId;
+  return `[${displayText}](${url})`;
+}
+
+/**
+ * Extract task ID from a ClickUp URL
+ */
+export function extractTaskIdFromUrl(url: string): string | null {
+  const match = url.match(/https?:\/\/app\.clickup\.com\/t\/([a-z0-9]{6,9})/i);
+  return match ? match[1] : null;
+}
+
+/**
+ * Validate if a string is a valid ClickUp URL
+ */
+export function isClickUpUrl(url: string): boolean {
+  return /^https?:\/\/app\.clickup\.com\//.test(url);
+}
+
+/**
+ * Format a prominent link section for responses
+ */
+export function formatLinksSection(links: { text: string; url: string }[]): string {
+  if (links.length === 0) return '';
+  
+  const linkLines = links.map(link => `🔗 [${link.text}](${link.url})`);
+  return `\n\n**📌 Quick Links:**\n${linkLines.join('\n')}`;
+}

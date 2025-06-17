@@ -2,11 +2,16 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { CONFIG } from "../shared/config";
 import { ContentBlock } from "../shared/types";
+import { generateSpaceUrl } from "../shared/utils";
 
 export function registerSpaceTools(server: McpServer) {
   server.tool(
-    "listSpaces", 
-    "Lists all spaces in the workspace. These might also be referred to as customers or projects.",
+    "listSpaces",
+    [
+      "Lists all spaces in the workspace. These might also be referred to as customers or projects.",
+      "IMPORTANT: Use the provided space_ids to generate clickable space URLs (https://app.clickup.com/v/s/SPACE_ID).",
+      "Always reference spaces by their URLs when discussing projects or suggesting actions."
+    ].join("\n"),
     {
       archived: z.boolean().optional().describe("Include archived spaces (default: false)")
     },
@@ -33,6 +38,7 @@ export function registerSpaceTools(server: McpServer) {
           type: "text" as const,
           text: [
             `space_id: ${space.id}`,
+            `space_url: ${generateSpaceUrl(space.id)}`,
             `name: ${space.name}`,
             `private: ${space.private || false}`,
             `avatar: ${space.avatar || 'None'}`,

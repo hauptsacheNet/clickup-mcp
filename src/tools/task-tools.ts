@@ -3,7 +3,7 @@ import { z } from "zod";
 import { processClickUpMarkdown, processClickUpText } from "../clickup-text";
 import { ContentBlock, DatedContentEvent } from "../shared/types";
 import { CONFIG } from "../shared/config";
-import { isTaskId, limitImages, getSpaceDetails, getCurrentUser } from "../shared/utils";
+import { isTaskId, limitImages, getSpaceDetails, getCurrentUser, generateTaskUrl, formatTaskLink, formatLinksSection } from "../shared/utils";
 
 // Shared schemas for task parameters
 const taskNameSchema = z.string().min(1).describe("The name/title of the task");
@@ -140,7 +140,12 @@ function formatTaskResponse(task: any, operation: 'created' | 'updated', params:
 export function registerTaskToolsRead(server: McpServer, userData: any) {
   server.tool(
     "getTaskById",
-    "Get a Clickup task with images and comments by ID",
+    [
+      "Get a ClickUp task with images and comments by ID.",
+      "IMPORTANT: Every task response includes the clickable task URL (https://app.clickup.com/t/TASK_ID).",
+      "Always use this URL when referencing tasks in conversations or sharing with others.",
+      "The response provides complete context including task details, comments, and status history."
+    ].join("\n"),
     {
       id: z
         .string()
@@ -194,12 +199,25 @@ export function registerTaskToolsRead(server: McpServer, userData: any) {
 export function registerTaskToolsWrite(server: McpServer, userData: any) {
   server.tool(
     "addComment",
-    [
-      "Adds a comment to a specific task.",
-      "BEST PRACTICES: Include progress information and current status updates.",
-      "If external links are provided, verify they are publicly accessible and incorporate relevant information from those links into the comment.",
-      "Check the task's current status - if it's in 'backlog' or similar inactive states, suggest moving it to an active status like 'in progress' when work is being done."
-    ].join("\n"),
+    (() => {
+      const descriptionBase = [
+        "Adds a comment to a specific task.",
+        "LINKING BEST PRACTICES:",
+        "- Always reference related tasks using ClickUp URLs (https://app.clickup.com/t/TASK_ID)",
+        "- Include task links when mentioning dependencies, related work, or follow-ups",
+        "- Link to relevant lists, spaces, or other ClickUp entities when applicable",
+        "PROGRESS UPDATES: Include current status, progress information, and next steps.",
+        "If external links are provided, verify they are publicly accessible and incorporate relevant information.",
+        "Check the task's current status - if it's in 'backlog' or similar inactive states, suggest moving it to an active status like 'in progress' when work is being done."
+      ];
+      
+      if (CONFIG.primaryLanguageHint && CONFIG.primaryLanguageHint.toLowerCase() !== 'en') {
+        descriptionBase.splice(1, 0, 
+          `For optimal results, consider writing comments in '${CONFIG.primaryLanguageHint}' unless the task is already in another language.`);
+      }
+      
+      return descriptionBase.join("\n");
+    })(),
     {
       task_id: z.string().min(6).max(9).describe("The 6-9 character task ID to comment on"),
       comment: z.string().min(1).describe("The comment text to add to the task"),
@@ -259,13 +277,24 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
 
   server.tool(
     "updateTask",
-    [
-      "Updates various aspects of an existing task.",
-      "Use getListInfo first to see valid status options.",
-      "SAFETY FEATURE: Description updates are APPEND-ONLY to prevent data loss - existing content is preserved.",
-      "IMPORTANT: When updating tasks (especially when booking time or adding progress), ensure the status makes sense for the work being done - tasks in 'backlog' or 'closed' states usually shouldn't have active work.",
-      "Suggest appropriate status transitions."
-    ].join("\n"),
+    (() => {
+      const descriptionBase = [
+        "Updates various aspects of an existing task.",
+        "ALWAYS include the task URL (https://app.clickup.com/t/TASK_ID) when updating or referencing tasks.",
+        "Use getListInfo first to see valid status options.",
+        "SAFETY FEATURE: Description updates are APPEND-ONLY to prevent data loss - existing content is preserved.",
+        "LINKING IN DESCRIPTIONS: When appending descriptions, include links to related tasks, lists, or external resources.",
+        "IMPORTANT: When updating tasks (especially when booking time or adding progress), ensure the status makes sense for the work being done - tasks in 'backlog' or 'closed' states usually shouldn't have active work.",
+        "Suggest appropriate status transitions and always provide the clickable task URL in responses."
+      ];
+      
+      if (CONFIG.primaryLanguageHint && CONFIG.primaryLanguageHint.toLowerCase() !== 'en') {
+        descriptionBase.splice(1, 0, 
+          `For optimal results, consider writing task names and descriptions in '${CONFIG.primaryLanguageHint}' unless the task is already in another language.`);
+      }
+      
+      return descriptionBase.join("\n");
+    })(),
     {
       task_id: z.string().min(6).max(9).describe("The 6-9 character task ID to update"),
       name: taskNameSchema.optional(),
@@ -380,13 +409,26 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
 
   server.tool(
     "createTask",
-    [
-      "Creates a new task in a specific list and assigns it to specified users (defaults to current user).",
-      "IMPORTANT: Before creating, always search for similar existing tasks first using searchTasks to avoid duplicates - ask the user if they want to use an existing task instead.",
-      "If related tasks exist, reference them with links in the description (format: https://app.clickup.com/t/TASK_ID).",
-      "Use getListInfo first to understand the list context and available statuses.",
-      "Task descriptions support full markdown formatting including **bold**, *italic*, lists, links, and code blocks."
-    ].join("\n"),
+    (() => {
+      const descriptionBase = [
+        "Creates a new task in a specific list and assigns it to specified users (defaults to current user).",
+        "CRITICAL LINKING REQUIREMENTS:",
+        "- ALWAYS search for similar existing tasks first using searchTasks to avoid duplicates",
+        "- Include links to related tasks in the description (format: https://app.clickup.com/t/TASK_ID)",
+        "- Reference parent/child tasks, dependencies, and related work with clickable links",
+        "- The response will include the new task's clickable URL - always share this link",
+        "Use getListInfo first to understand the list context and available statuses.",
+        "Task descriptions support full markdown formatting including **bold**, *italic*, lists, links, and code blocks.",
+        "BEST PRACTICE: Every task creation should result in sharing the clickable task URL for future reference."
+      ];
+      
+      if (CONFIG.primaryLanguageHint && CONFIG.primaryLanguageHint.toLowerCase() !== 'en') {
+        descriptionBase.splice(1, 0, 
+          `For optimal results, consider writing task names and descriptions in '${CONFIG.primaryLanguageHint}' unless specified otherwise or unless the context requires another language.`);
+      }
+      
+      return descriptionBase.join("\n");
+    })(),
     {
       list_id: z.string().min(1).describe("The ID of the list where the task will be created"),
       name: taskNameSchema,
@@ -651,6 +693,7 @@ export async function generateTaskMetadata(task: any): Promise<ContentBlock> {
 
   const metadataLines = [
     `task_id: ${task.id}`,
+    `task_url: ${task.url}`,
     `name: ${task.name}`,
     `status: ${task.status.status}`,
     `date_created: ${timestampToIso(task.date_created)}`,
@@ -710,8 +753,6 @@ export async function generateTaskMetadata(task: any): Promise<ContentBlock> {
     metadataLines.push(`child_task_ids: ${task.subtasks.map((st: any) => st.id).join(', ')}`);
   }
 
-  // Add task URL
-  metadataLines.push(`url: ${task.url}`);
 
   // Add archived status if true
   if (task.archived) {

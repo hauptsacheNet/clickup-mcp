@@ -1,7 +1,7 @@
 import {McpServer} from "@modelcontextprotocol/sdk/server/mcp.js";
 import {z} from "zod";
 import {CONFIG} from "../shared/config";
-import {isTaskId, getTaskSearchIndex, getCurrentUser} from "../shared/utils";
+import {isTaskId, getTaskSearchIndex, getCurrentUser, generateTaskUrl, formatTaskLink} from "../shared/utils";
 import {generateTaskMetadata} from "./task-tools";
 
 const MAX_SEARCH_RESULTS = 50;
@@ -12,8 +12,10 @@ export function registerSearchTools(server: McpServer) {
     "Searches tasks by name, content, assignees, and ID (case insensitive) with fuzzy matching and support for multiple search terms (OR logic).",
     "Can filter by multiple list_ids, space_ids, todo status, or tasks assigned to the current user. If no search terms provided, returns most recently updated tasks.",
     // Placeholder for language-specific guidance
+    "IMPORTANT: Every search result includes the clickable task URL (https://app.clickup.com/t/TASK_ID).",
+    "USE LINKS: Always reference tasks by their URLs when discussing search results or suggesting actions.",
     "You'll get a rough overview of the tasks that match the search terms, sorted by relevance.",
-    "Always use getTaskById to get more specific information if a task is relevant.",
+    "Always use getTaskById to get more specific information if a task is relevant, and always share the task URL.",
   ];
 
   if (CONFIG.primaryLanguageHint && CONFIG.primaryLanguageHint.toLowerCase() !== 'en') {

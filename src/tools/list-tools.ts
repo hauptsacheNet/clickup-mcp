@@ -2,11 +2,17 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { CONFIG } from "../shared/config";
 import { ContentBlock } from "../shared/types";
+import { generateListUrl, generateSpaceUrl, generateFolderUrl, formatListLink, formatSpaceLink } from "../shared/utils";
 
 export function registerListToolsRead(server: McpServer) {
   server.tool(
     "listLists",
-    "Lists all lists and folders in a space. They might also be referred to as boards or tables. Shows both direct lists (folderless) and folders containing lists. If folder_id is provided, lists only the lists within that specific folder.",
+    [
+      "Lists all lists and folders in a space. They might also be referred to as boards or tables.",
+      "Shows both direct lists (folderless) and folders containing lists. If folder_id is provided, lists only the lists within that specific folder.",
+      "IMPORTANT: Use the provided list_ids to generate clickable list URLs (https://app.clickup.com/v/l/LIST_ID).",
+      "Always reference lists by their URLs when suggesting actions or creating tasks."
+    ].join("\n"),
     {
       space_id: z.string().min(1).describe("The ID of the space to list content from"),
       folder_id: z.string().optional().describe("Optional folder ID. If provided, lists only lists within this folder. If not provided, shows both folders and folderless lists in the space."),
@@ -40,6 +46,7 @@ export function registerListToolsRead(server: McpServer) {
             text: [
               `type: list`,
               `list_id: ${list.id}`,
+              `list_url: ${generateListUrl(list.id)}`,
               `name: ${list.name}`,
               `space_id: ${list.space?.id || space_id}`,
               `folder_id: ${folder_id}`,
@@ -84,6 +91,7 @@ export function registerListToolsRead(server: McpServer) {
                 text: [
                   `type: folder`,
                   `folder_id: ${folder.id}`,
+                  `folder_url: ${generateFolderUrl(folder.id)}`,
                   `name: ${folder.name}`,
                   `space_id: ${space_id}`,
                   `task_count: ${folder.task_count || 0}`,
@@ -109,6 +117,7 @@ export function registerListToolsRead(server: McpServer) {
                 text: [
                   `type: list`,
                   `list_id: ${list.id}`,
+                  `list_url: ${generateListUrl(list.id)}`,
                   `name: ${list.name}`,
                   `space_id: ${list.space?.id || space_id}`,
                   `task_count: ${list.task_count || 0}`,
@@ -160,8 +169,10 @@ export function registerListToolsRead(server: McpServer) {
     "getListInfo",
     [
       "Gets comprehensive information about a list including description and available statuses.",
+      "ALWAYS use the list URL (https://app.clickup.com/v/l/LIST_ID) when referencing lists.",
       "Use this before creating tasks to understand the list context and available statuses for new tasks.",
-      "IMPORTANT: The list description often contains valuable project context, requirements, or guidelines - read and consider this information when creating or updating tasks in this list."
+      "IMPORTANT: The list description often contains valuable project context, requirements, or guidelines - read and consider this information when creating or updating tasks in this list.",
+      "Share the clickable list URL when suggesting list-related actions."
     ].join("\n"),
     {
       list_id: z.string().min(1).describe("The list ID to get information for")
@@ -182,9 +193,11 @@ export function registerListToolsRead(server: McpServer) {
         const responseLines = [
           `List Information:`,
           `list_id: ${list_id}`,
+          `list_url: ${generateListUrl(list_id)}`,
           `name: ${listData.name}`,
           `folder: ${listData.folder?.name || 'No folder'}`,
           `space: ${listData.space?.name || 'Unknown'} (${listData.space?.id || 'N/A'})`,
+          `space_url: ${generateSpaceUrl(listData.space?.id || '')}`,
           `archived: ${listData.archived || false}`,
           `task_count: ${listData.task_count || 0}`,
         ];
@@ -246,8 +259,10 @@ export function registerListToolsWrite(server: McpServer) {
     "updateListInfo",
     [
       "Appends documentation or context to a list's description.",
+      "ALWAYS reference the list URL (https://app.clickup.com/v/l/LIST_ID) when updating or discussing lists.",
       "SAFETY FEATURE: Description updates are APPEND-ONLY to prevent data loss - existing content is preserved.",
       "Use this to add project context, requirements, or guidelines that LLMs should consider when working with tasks in this list.",
+      "Include links to related tasks, spaces, or external resources in the appended content.",
       "Content is appended in markdown format with timestamp for tracking changes."
     ].join("\n"),
     {
