@@ -142,7 +142,6 @@ export function registerTaskToolsRead(server: McpServer, userData: any) {
     "getTaskById",
     [
       "Get a ClickUp task with images and comments by ID.",
-      "IMPORTANT: Every task response includes the clickable task URL (https://app.clickup.com/t/TASK_ID).",
       "Always use this URL when referencing tasks in conversations or sharing with others.",
       "The response provides complete context including task details, comments, and status history."
     ].join("\n"),

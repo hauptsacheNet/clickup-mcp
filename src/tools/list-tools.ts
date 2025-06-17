@@ -10,7 +10,6 @@ export function registerListToolsRead(server: McpServer) {
     [
       "Lists all lists and folders in a space. They might also be referred to as boards or tables.",
       "Shows both direct lists (folderless) and folders containing lists. If folder_id is provided, lists only the lists within that specific folder.",
-      "IMPORTANT: Use the provided list_ids to generate clickable list URLs (https://app.clickup.com/v/l/LIST_ID).",
       "Always reference lists by their URLs when suggesting actions or creating tasks."
     ].join("\n"),
     {
@@ -51,7 +50,7 @@ export function registerListToolsRead(server: McpServer) {
               `space_id: ${list.space?.id || space_id}`,
               `folder_id: ${folder_id}`,
               `task_count: ${list.task_count || 0}`,
-              `private: ${list.private || false}`,
+              ...(list.private ? [`private: true`] : []),
               ...(list.archived ? ['archived: true'] : []),
               ...(list.color ? [`color: ${list.color}`] : []),
               ...(list.access ? [`access: ${list.access}`] : []),
@@ -95,7 +94,7 @@ export function registerListToolsRead(server: McpServer) {
                   `name: ${folder.name}`,
                   `space_id: ${space_id}`,
                   `task_count: ${folder.task_count || 0}`,
-                  `private: ${folder.private || false}`,
+                  ...(folder.private ? [`private: true`] : []),
                   ...(folder.archived ? ['archived: true'] : []),
                   ...(folder.color ? [`color: ${folder.color}`] : []),
                   `contains_lists: true`
@@ -121,7 +120,7 @@ export function registerListToolsRead(server: McpServer) {
                   `name: ${list.name}`,
                   `space_id: ${list.space?.id || space_id}`,
                   `task_count: ${list.task_count || 0}`,
-                  `private: ${list.private || false}`,
+                  ...(list.private ? [`private: true`] : []),
                   ...(list.archived ? ['archived: true'] : []),
                   ...(list.color ? [`color: ${list.color}`] : []),
                   ...(list.access ? [`access: ${list.access}`] : []),

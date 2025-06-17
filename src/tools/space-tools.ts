@@ -9,7 +9,6 @@ export function registerSpaceTools(server: McpServer) {
     "listSpaces",
     [
       "Lists all spaces in the workspace. These might also be referred to as customers or projects.",
-      "IMPORTANT: Use the provided space_ids to generate clickable space URLs (https://app.clickup.com/v/s/SPACE_ID).",
       "Always reference spaces by their URLs when discussing projects or suggesting actions."
     ].join("\n"),
     {
@@ -40,14 +39,8 @@ export function registerSpaceTools(server: McpServer) {
             `space_id: ${space.id}`,
             `space_url: ${generateSpaceUrl(space.id)}`,
             `name: ${space.name}`,
-            `private: ${space.private || false}`,
-            `avatar: ${space.avatar || 'None'}`,
-            `color: ${space.color || 'None'}`,
-            `access: ${space.access || 'Unknown'}`,
+            ...(space.private ? [`private: true`] : []),
             ...(space.archived ? ['archived: true'] : []),
-            ...(space.multiple_assignees !== undefined ? [`multiple_assignees: ${space.multiple_assignees}`] : []),
-            ...(space.features?.due_dates?.enabled !== undefined ? [`due_dates_enabled: ${space.features.due_dates.enabled}`] : []),
-            ...(space.features?.time_tracking?.enabled !== undefined ? [`time_tracking_enabled: ${space.features.time_tracking.enabled}`] : []),
           ].join('\n')
         }));
 
