@@ -189,6 +189,22 @@ export function registerListToolsRead(server: McpServer) {
 
         const listData = await listResponse.json();
 
+        // Fetch space tags in parallel (don't let this fail the main request)
+        let spaceTags: any[] = [];
+        if (listData.space?.id) {
+          try {
+            const spaceTagsResponse = await fetch(`https://api.clickup.com/api/v2/space/${listData.space.id}/tag`, {
+              headers: { Authorization: CONFIG.apiKey },
+            });
+            if (spaceTagsResponse.ok) {
+              const spaceTagsData = await spaceTagsResponse.json();
+              spaceTags = spaceTagsData.tags || [];
+            }
+          } catch (error) {
+            console.error(`Error fetching space tags for space ${listData.space.id}:`, error);
+          }
+        }
+
         const responseLines = [
           `List Information:`,
           `list_id: ${list_id}`,
@@ -215,18 +231,25 @@ export function registerListToolsRead(server: McpServer) {
             type: status.type || 'custom'
           }));
 
-          responseLines.push('');
           responseLines.push(`Available statuses (${statuses.length} total):`);
 
           statuses.forEach((status: any) => {
             responseLines.push(`  - ${status.name} (${status.type})`);
           });
 
-          responseLines.push('');
           responseLines.push(`Valid status names for createTask/updateTask: ${statuses.map((s: any) => s.name).join(', ')}`);
         } else {
-          responseLines.push('');
           responseLines.push('No statuses found for this list.');
+        }
+
+        // Add space tags information
+        if (spaceTags.length > 0) {
+          const tagNames = spaceTags.map((tag: any) => tag.name).filter(Boolean).sort();
+          if (tagNames.length > 0) {
+            responseLines.push(`Available tags in space (shared across all lists): ${tagNames.join(', ')}`);
+          }
+        } else if (listData.space?.id) {
+          responseLines.push('No tags found in this space.');
         }
 
         return {
