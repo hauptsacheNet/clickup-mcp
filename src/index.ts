@@ -30,11 +30,11 @@ async function initializeServer() {
     // Core task context tools for AI coding assistance
     // Only getTaskById and searchTasks
     registerTaskToolsRead(server, userData);
-    registerSearchTools(server);
+    registerSearchTools(server, userData);
   } else if (CONFIG.mode === 'read') {
     // All read-only tools
     registerTaskToolsRead(server, userData);
-    registerSearchTools(server);
+    registerSearchTools(server, userData);
     registerSpaceTools(server);
     registerListToolsRead(server);
     registerTimeToolsRead(server);
@@ -42,7 +42,7 @@ async function initializeServer() {
     // All tools (full functionality)
     registerTaskToolsRead(server, userData);
     registerTaskToolsWrite(server, userData);
-    registerSearchTools(server);
+    registerSearchTools(server, userData);
     registerSpaceTools(server);
     registerListToolsRead(server);
     registerListToolsWrite(server);

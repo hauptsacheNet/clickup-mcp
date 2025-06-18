@@ -6,7 +6,7 @@ import {generateTaskMetadata} from "./task-tools";
 
 const MAX_SEARCH_RESULTS = 50;
 
-export function registerSearchTools(server: McpServer) {
+export function registerSearchTools(server: McpServer, userData: any) {
   // Dynamically construct the searchTasks description
   const searchTasksDescriptionBase = [
     "Searches tasks by name, content, assignees, and ID (case insensitive) with fuzzy matching and support for multiple search terms (OR logic).",
@@ -39,33 +39,22 @@ export function registerSearchTools(server: McpServer) {
         .array(z.string())
         .optional()
         .describe("Filter tasks to specific space IDs"),
-      todo: z
+      only_todo: z
         .boolean()
         .optional()
-        .describe("Filter for open/todo tasks only (exclude done tasks)"),
+        .describe("Filter for open/todo tasks only (exclude done and closed tasks)"),
+      status: z
+        .array(z.string())
+        .optional()
+        .describe("Filter for tasks with specific status names (overrides only_todo if provided)"),
       assigned_to_me: z
         .boolean()
         .optional()
         .describe("Filter for tasks assigned to the current user"),
     },
-    async ({terms, list_ids, space_ids, todo, assigned_to_me}) => {
+    async ({terms, list_ids, space_ids, only_todo, status, assigned_to_me}) => {
       // Get current user ID if filtering by assigned_to_me
-      let assignees: string[] | undefined;
-      if (assigned_to_me) {
-        try {
-          const userData = await getCurrentUser();
-          assignees = [userData.user.id];
-        } catch (error) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: "Error: Failed to get current user information.",
-              },
-            ],
-          };
-        }
-      }
+      const assignees = assigned_to_me ? [userData.user.id as string] : [];
 
       const searchIndex = await getTaskSearchIndex(space_ids, list_ids, assignees);
       if (!searchIndex) {
@@ -82,8 +71,13 @@ export function registerSearchTools(server: McpServer) {
       // Early return for no search terms
       if (!terms || terms.length === 0) {
         let allTasks = (searchIndex as any)._docs || [];
-        if (todo) {
-          allTasks = allTasks.filter((task: any) => task.status.type !== "done");
+        
+        // Apply status filtering
+        if (status && status.length > 0) {
+          const statusLower = status.map(s => s.toLowerCase());
+          allTasks = allTasks.filter((task: any) => statusLower.includes(task.status.status.toLowerCase()));
+        } else if (only_todo) {
+          allTasks = allTasks.filter((task: any) => task.status.type !== "done" && task.status.type !== "closed");
         }
 
         // Sort by updated date (most recent first) and limit
@@ -183,8 +177,12 @@ export function registerSearchTools(server: McpServer) {
         .sort((a, b) => a.score - b.score)
         .map(entry => entry.item);
 
-      if (todo) {
-        resultTasks = resultTasks.filter((task: any) => task.status.type !== "done");
+      // Apply status filtering
+      if (status && status.length > 0) {
+        const statusLower = status.map(s => s.toLowerCase());
+        resultTasks = resultTasks.filter((task: any) => statusLower.includes(task.status.status.toLowerCase()));
+      } else if (only_todo) {
+        resultTasks = resultTasks.filter((task: any) => task.status.type !== "done" && task.status.type !== "closed");
       }
 
       // Apply result limit
