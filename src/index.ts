@@ -6,7 +6,8 @@ import { CONFIG } from "./shared/config";
 import { getCurrentUser } from "./shared/utils";
 
 // Import tool registration functions
-import { registerTaskToolsRead, registerTaskToolsWrite } from "./tools/task-tools";
+import { registerTaskToolsRead } from "./tools/task-tools";
+import { registerTaskToolsWrite } from "./tools/task-write-tools";
 import { registerSearchTools } from "./tools/search-tools";
 import { registerSpaceTools } from "./tools/space-tools";
 import { registerListToolsRead, registerListToolsWrite } from "./tools/list-tools";
