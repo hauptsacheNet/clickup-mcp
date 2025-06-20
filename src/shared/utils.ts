@@ -294,3 +294,127 @@ export function formatLinksSection(links: { text: string; url: string }[]): stri
   const linkLines = links.map(link => `🔗 [${link.text}](${link.url})`);
   return `\n\n**📌 Quick Links:**\n${linkLines.join('\n')}`;
 }
+
+// Space search index cache
+let spaceSearchIndex: Fuse<any> | null = null;
+
+/**
+ * Get or refresh the space search index
+ */
+export async function getSpaceSearchIndex(): Promise<Fuse<any> | null> {
+  // Return cached index if available
+  if (spaceSearchIndex) {
+    return spaceSearchIndex;
+  }
+
+  // Fetch spaces data
+  try {
+    const url = `https://api.clickup.com/api/v2/team/${CONFIG.teamId}/space`;
+    const response = await fetch(url, {
+      headers: { Authorization: CONFIG.apiKey },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Error fetching spaces: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    const spacesData = data.spaces || [];
+
+    // Create Fuse search index
+    spaceSearchIndex = new Fuse(spacesData as any[], {
+      keys: [
+        { name: 'name', weight: 0.7 },
+        { name: 'id', weight: 0.6 }
+      ],
+      includeScore: true,
+      threshold: 0.4,
+      minMatchCharLength: 1,
+    });
+
+    // Auto-cleanup after 60 seconds
+    setTimeout(() => {
+      spaceSearchIndex = null;
+      console.error('Auto-cleaned space search index');
+    }, GLOBAL_REFRESH_INTERVAL);
+
+    console.error(`Space search index created with ${spacesData?.length || 0} spaces`);
+    return spaceSearchIndex;
+
+  } catch (error) {
+    console.error('Error creating space search index:', error);
+    return null;
+  }
+}
+
+
+const listCache = new Map<string, Promise<any>>(); // Cache for space lists/folders
+
+/**
+ * Get lists and folders for a specific space with caching
+ */
+export async function getSpaceContent(spaceId: string): Promise<{ lists: any[], folders: any[] }> {
+  const cacheKey = `space-content-${spaceId}`;
+  
+  // Check cache first
+  const cachedContent = listCache.get(cacheKey);
+  if (cachedContent) {
+    return cachedContent;
+  }
+
+  // Fetch content with parallel requests
+  const fetchPromise = (async () => {
+    try {
+      const [foldersResponse, listsResponse] = await Promise.all([
+        fetch(`https://api.clickup.com/api/v2/space/${spaceId}/folder`, {
+          headers: { Authorization: CONFIG.apiKey },
+        }),
+        fetch(`https://api.clickup.com/api/v2/space/${spaceId}/list`, {
+          headers: { Authorization: CONFIG.apiKey },
+        })
+      ]);
+
+      const folders = foldersResponse.ok ? 
+        (await foldersResponse.json()).folders || [] : [];
+      const lists = listsResponse.ok ? 
+        (await listsResponse.json()).lists || [] : [];
+
+      // For each folder, also fetch its lists
+      const folderListPromises = folders.map(async (folder: any) => {
+        try {
+          const folderListResponse = await fetch(
+            `https://api.clickup.com/api/v2/folder/${folder.id}/list`,
+            { headers: { Authorization: CONFIG.apiKey } }
+          );
+          if (folderListResponse.ok) {
+            const folderListData = await folderListResponse.json();
+            folder.lists = folderListData.lists || [];
+          }
+          return folder;
+        } catch (error) {
+          console.error(`Error fetching lists for folder ${folder.id}:`, error);
+          folder.lists = [];
+          return folder;
+        }
+      });
+
+      const foldersWithLists = await Promise.all(folderListPromises);
+
+      return { lists, folders: foldersWithLists };
+    } catch (error) {
+      console.error(`Error fetching space content for ${spaceId}:`, error);
+      return { lists: [], folders: [] };
+    }
+  })();
+
+  // Cache the promise
+  listCache.set(cacheKey, fetchPromise);
+  
+  // Auto-cleanup after 60 seconds
+  setTimeout(() => {
+    listCache.delete(cacheKey);
+    console.error(`Auto-cleaned space content cache for ${spaceId}`);
+  }, GLOBAL_REFRESH_INTERVAL);
+
+  return fetchPromise;
+}

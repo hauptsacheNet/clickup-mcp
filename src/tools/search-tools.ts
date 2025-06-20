@@ -9,17 +9,18 @@ const MAX_SEARCH_RESULTS = 50;
 export function registerSearchTools(server: McpServer, userData: any) {
   // Dynamically construct the searchTasks description
   const searchTasksDescriptionBase = [
-    "Searches tasks by name, content, assignees, and ID (case insensitive) with fuzzy matching and support for multiple search terms (OR logic).",
+    "Searches tasks (sometimes called Tickets or Cards) by name, content, assignees, and ID (case insensitive) with fuzzy matching and support for multiple search terms (OR logic).",
     "Can filter by multiple list_ids, space_ids, todo status, or tasks assigned to the current user. If no search terms provided, returns most recently updated tasks.",
-    // Placeholder for language-specific guidance
-    "Always reference tasks by their URLs when discussing search results or suggesting actions.",
-    "You'll get a rough overview of the tasks that match the search terms, sorted by relevance.",
-    "Always use getTaskById to get more specific information if a task is relevant, and always share the task URL.",
+    "Can also be used to find tasks for the current user by providing the assigned_to_me flag."
   ];
 
   if (CONFIG.primaryLanguageHint && CONFIG.primaryLanguageHint.toLowerCase() !== 'en') {
-    searchTasksDescriptionBase.splice(2, 0, `For optimal results, as your ClickUp tasks may be primarily in '${CONFIG.primaryLanguageHint}', consider providing search terms in English and '${CONFIG.primaryLanguageHint}'.`);
+    searchTasksDescriptionBase.push(`For optimal results, as your ClickUp tasks may be primarily in '${CONFIG.primaryLanguageHint}', consider providing search terms in English and '${CONFIG.primaryLanguageHint}'.`);
   }
+
+  searchTasksDescriptionBase.push("Always reference tasks by their URLs when discussing search results or suggesting actions.");
+  searchTasksDescriptionBase.push("You'll get a rough overview of the tasks that match the search terms, sorted by relevance.");
+  searchTasksDescriptionBase.push("Always use getTaskById to get more specific information if a task is relevant, and always share the task URL.");
 
   server.tool(
     "searchTasks",
@@ -50,7 +51,7 @@ export function registerSearchTools(server: McpServer, userData: any) {
       assigned_to_me: z
         .boolean()
         .optional()
-        .describe("Filter for tasks assigned to the current user"),
+        .describe(`Filter for tasks assigned to the current user (${userData.user.username} (${userData.user.id}))`),
     },
     async ({terms, list_ids, space_ids, only_todo, status, assigned_to_me}) => {
       // Get current user ID if filtering by assigned_to_me

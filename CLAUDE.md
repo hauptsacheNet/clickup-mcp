@@ -1,3 +1,5 @@
 - ClickUp api documentation is available here: https://developer.clickup.com/reference/gettasks
+- Think about api limits. ClickUp allows 100 api calls per minute per user. A typical workflow must not exceed that.
+- Use "npm run build" to compile the typescript for validation.
 - Use "npm run cli" to test mcp calls.
-- Always use console.error to prevent writing log messages to stdout.
+- Use console.error to prevent writing log messages to stdout.
