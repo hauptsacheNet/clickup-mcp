@@ -120,9 +120,10 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
       start_date: taskStartDateSchema,
       time_estimate: taskTimeEstimateSchema,
       tags: taskTagsSchema.describe("Optional array of tag names (will replace existing tags)"),
+      parent_task_id: z.string().optional().describe("Optional parent task ID to change parent/child relationships"),
       assignees: z.array(z.string()).optional().describe(createAssigneeDescription(userData))
     },
-    async ({ task_id, name, append_description, status, priority, due_date, start_date, time_estimate, tags, assignees }) => {
+    async ({ task_id, name, append_description, status, priority, due_date, start_date, time_estimate, tags, parent_task_id, assignees }) => {
       try {
         const userData = await getCurrentUser();
 
@@ -148,7 +149,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
 
         // Build update body using shared utility (without description since we handle it separately)
         const updateBody = buildTaskRequestBody({
-          name, status, priority, due_date, start_date, time_estimate, tags, assignees
+          name, status, priority, due_date, start_date, time_estimate, tags, parent_task_id, assignees
         });
 
         // Add markdown description if we have content to append
@@ -191,7 +192,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
         const updatedTask = await updateResponse.json();
 
         const responseLines = formatTaskResponse(updatedTask, 'updated', {
-          name, append_description, status, priority, due_date, start_date, time_estimate, tags, assignees
+          name, append_description, status, priority, due_date, start_date, time_estimate, tags, parent_task_id, assignees
         }, userData);
 
         return {
@@ -240,7 +241,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
       return descriptionBase.join("\n");
     })(),
     {
-      list_id: z.string().min(1).describe("The ID of the list where the task will be created"),
+      list_id: z.string().min(1).describe("The ID of the list where the task will be created. Note: ClickUp API does not support moving tasks between lists after creation - this must be done manually in the ClickUp interface"),
       name: taskNameSchema,
       description: z.string().optional().describe("Optional markdown description for the task - supports full markdown formatting"),
       status: z.string().optional().describe("Optional status name - use getListInfo to see valid options"),
@@ -249,16 +250,16 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
       start_date: taskStartDateSchema,
       time_estimate: taskTimeEstimateSchema,
       tags: taskTagsSchema,
-      parent: z.string().optional().describe("Optional parent task ID to create this as a subtask"),
+      parent_task_id: z.string().optional().describe("Optional parent task ID to create this as a subtask"),
       assignees: z.array(z.string()).optional().describe(createAssigneeDescription(userData))
     },
-    async ({ list_id, name, description, status, priority, due_date, start_date, time_estimate, tags, parent, assignees }) => {
+    async ({ list_id, name, description, status, priority, due_date, start_date, time_estimate, tags, parent_task_id, assignees }) => {
       try {
         const userData = await getCurrentUser();
         const currentUserId = userData.user.id;
 
         const requestBody = buildTaskRequestBody({
-          name, status, priority, due_date, start_date, time_estimate, tags, assignees, parent
+          name, status, priority, due_date, start_date, time_estimate, tags, assignees, parent_task_id
         }, currentUserId);
 
         // Add markdown description if provided
@@ -283,7 +284,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
         const createdTask = await response.json();
 
         const responseLines = formatTaskResponse(createdTask, 'created', {
-          list_id, name, description, status, priority, due_date, start_date, time_estimate, tags, parent, assignees
+          list_id, name, description, status, priority, due_date, start_date, time_estimate, tags, parent_task_id, assignees
         }, userData);
 
         return {
@@ -370,7 +371,7 @@ function buildTaskRequestBody(params: {
   time_estimate?: number;
   tags?: string[];
   assignees?: string[];
-  parent?: string;
+  parent_task_id?: string;
 }, currentUserId?: string): any {
   const requestBody: any = {};
 
@@ -408,8 +409,8 @@ function buildTaskRequestBody(params: {
     requestBody.assignees = [currentUserId];
   }
 
-  if (params.parent !== undefined) {
-    requestBody.parent = params.parent;
+  if (params.parent_task_id !== undefined) {
+    requestBody.parent = params.parent_task_id;
   }
 
   return requestBody;
@@ -452,8 +453,8 @@ function formatTaskResponse(task: any, operation: 'created' | 'updated', params:
     responseLines.push(`tags: ${params.tags.join(', ')}`);
   }
 
-  if (params.parent !== undefined) {
-    responseLines.push(`parent_task: ${params.parent}`);
+  if (params.parent_task_id !== undefined) {
+    responseLines.push(`parent_task_id: ${params.parent_task_id}`);
   }
 
   return responseLines;
