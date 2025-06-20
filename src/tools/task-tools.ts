@@ -18,7 +18,7 @@ const taskTagsSchema = z.array(z.string()).optional().describe("Optional array o
 
 function createAssigneeDescription(userData: any): string {
   const user = userData.user;
-  return `Optional array of user IDs to assign to the task (defaults to current user: ${user.username} - ${user.email} (${user.id}))`;
+  return `Optional array of user IDs to assign to the task (defaults to current user: ${user.username} (${user.id}))`;
 }
 
 function convertPriorityToNumber(priority: string): number {
@@ -103,7 +103,7 @@ function formatTaskResponse(task: any, operation: 'created' | 'updated', params:
     `assignees: ${task.assignees?.map((a: any) => `${a.username} (${a.id})`).join(', ') || 'None'}`,
     ...(operation === 'created' && params.list_id ? [`list_id: ${params.list_id}`] : []),
     ...(operation === 'updated' ? [
-      `updated_by: ${userData.user.username}`,
+      `updated_by: ${userData.user.username} (${userData.user.id})`,
       `updated_at: ${timestampToIso(Date.now())}`
     ] : [])
   ];
