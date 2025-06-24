@@ -16,7 +16,7 @@ import { registerTimeToolsRead, registerTimeToolsWrite } from "./tools/time-tool
 // Create an MCP server
 const server = new McpServer({
   name: "Clickup MCP",
-  version: "1.0.0",
+  version: require('../package.json').version,
 });
 
 // Register tools based on mode with user data for enhanced documentation
