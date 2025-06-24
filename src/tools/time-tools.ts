@@ -2,7 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { CONFIG } from "../shared/config";
 import { ContentBlock } from "../shared/types";
-import { getCurrentUser } from "../shared/utils";
+import { getCurrentUser, getAllTeamMembers } from "../shared/utils";
 
 /**
  * Converts ISO date string to Unix timestamp in milliseconds
@@ -32,39 +32,6 @@ function timestampToIso(timestamp: number): string {
   const timezoneOffset = sign + String(offsetHours).padStart(2, '0') + ':' + String(offsetMinutes).padStart(2, '0');
 
   return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}${timezoneOffset}`;
-}
-
-/**
- * Gets all team members from ClickUp API
- */
-async function getAllTeamMembers(): Promise<string[]> {
-  try {
-    const response = await fetch(`https://api.clickup.com/api/v2/team`, {
-      headers: { Authorization: CONFIG.apiKey },
-    });
-
-    if (!response.ok) {
-      console.error(`Error fetching teams: ${response.status} ${response.statusText}`);
-      return [];
-    }
-
-    const data = await response.json();
-    if (!data.teams || !Array.isArray(data.teams)) {
-      return [];
-    }
-
-    // Find the team that matches our configured team ID and extract all user IDs
-    const currentTeam = data.teams.find((team: any) => team.id === CONFIG.teamId);
-    if (!currentTeam || !currentTeam.members || !Array.isArray(currentTeam.members)) {
-      console.error(`Team ${CONFIG.teamId} not found or has no members`);
-      return [];
-    }
-
-    return currentTeam.members.map((member: any) => member.user?.id).filter(Boolean);
-  } catch (error) {
-    console.error('Error fetching team members:', error);
-    return [];
-  }
 }
 
 /**

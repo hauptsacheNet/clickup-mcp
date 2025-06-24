@@ -3,7 +3,7 @@ import { z } from "zod";
 import { processClickUpMarkdown, processClickUpText } from "../clickup-text";
 import { ContentBlock, DatedContentEvent } from "../shared/types";
 import { CONFIG } from "../shared/config";
-import { isTaskId, limitImages, getSpaceDetails, getCurrentUser, generateTaskUrl, formatTaskLink, formatLinksSection } from "../shared/utils";
+import { isTaskId, limitImages, getSpaceDetails, getAllTeamMembers } from "../shared/utils";
 
 // Read-specific utility functions
 
@@ -65,8 +65,39 @@ export function registerTaskToolsRead(server: McpServer, userData: any) {
 
 }
 
+/**
+ * Fetch time entries for a specific task (all time, not date-limited for detail view)
+ */
+async function fetchTaskTimeEntries(taskId: string): Promise<any[]> {
+  try {
+    // Get all team members for assignee filter
+    const teamMembers = await getAllTeamMembers();
+    const params = new URLSearchParams({
+      task_id: taskId,
+      include_location_names: 'true',
+      start_date: '0', // overwrite the default 30 days
+    });
 
+    if (teamMembers.length > 0) {
+      params.append('assignee', teamMembers.join(','));
+    }
 
+    const response = await fetch(`https://api.clickup.com/api/v2/team/${CONFIG.teamId}/time_entries?${params}`, {
+      headers: { Authorization: CONFIG.apiKey },
+    });
+
+    if (!response.ok) {
+      console.error(`Error fetching time entries for task ${taskId}: ${response.status} ${response.statusText}`);
+      return [];
+    }
+
+    const data = await response.json();
+    return data.data || [];
+  } catch (error) {
+    console.error('Error fetching task time entries:', error);
+    return [];
+  }
+}
 
 async function loadTaskContent(taskId: string): Promise<ContentBlock[]> {
   const response = await fetch(
@@ -74,13 +105,19 @@ async function loadTaskContent(taskId: string): Promise<ContentBlock[]> {
     { headers: { Authorization: CONFIG.apiKey } }
   );
   const task = await response.json();
-  const content: ContentBlock[] = await processClickUpMarkdown(
-    task.markdown_description || "",
-    task.attachments
-  );
 
-  // Create the task metadata block using the helper function
-  const taskMetadata: ContentBlock = await generateTaskMetadata(task);
+  const [taskMetadata, content] = await Promise.all([
+    // Create the task metadata block using the helper functions
+    (async () => {
+      const timeEntries = await fetchTaskTimeEntries(task.id);
+      return await generateTaskMetadata(task, timeEntries, true);
+    })(),
+    // process markdown and download images
+    processClickUpMarkdown(
+      task.markdown_description || "",
+      task.attachments
+    ),
+  ]);
 
   return [taskMetadata, ...content];
 }
@@ -166,61 +203,6 @@ async function loadTimeInStatusHistory(taskId: string): Promise<DatedContentEven
   }
 }
 
-/**
- * Helper function to fetch time entries for a task
- */
-async function getTaskTimeEntries(taskId: string): Promise<string | null> {
-  try {
-    const response = await fetch(`https://api.clickup.com/api/v2/team/${CONFIG.teamId}/time_entries?task_id=${taskId}`, {
-      headers: { Authorization: CONFIG.apiKey },
-    });
-
-    if (!response.ok) {
-      return null;
-    }
-
-    const data = await response.json();
-
-    if (!data.data || !Array.isArray(data.data) || data.data.length === 0) {
-      return null;
-    }
-
-    // Group time entries by user
-    const timeByUser = new Map<string, number>();
-
-    data.data.forEach((entry: any) => {
-      const username = entry.user?.username || 'Unknown User';
-      const currentTime = timeByUser.get(username) || 0;
-      const entryDurationMs = parseInt(entry.duration) || 0;
-      timeByUser.set(username, currentTime + entryDurationMs);
-    });
-
-    // Format results
-    const userTimeEntries: string[] = [];
-    let totalTimeMs = 0;
-
-    for (const [username, totalMs] of timeByUser.entries()) {
-      const hours = totalMs / (1000 * 60 * 60);
-      const displayHours = Math.floor(hours);
-      const displayMinutes = Math.round((hours - displayHours) * 60);
-      const timeDisplay = displayHours > 0 ? 
-        `${displayHours}h ${displayMinutes}m` : 
-        `${displayMinutes}m`;
-
-      userTimeEntries.push(`${username}: ${timeDisplay}`);
-      totalTimeMs += totalMs;
-    }
-
-    if (userTimeEntries.length === 0) {
-      return null;
-    }
-
-    return userTimeEntries.join(', ');
-  } catch (error) {
-    console.error(`Error fetching time entries for task ${taskId}:`, error);
-    return null;
-  }
-}
 
 /**
  * Formats timestamp to ISO string with local timezone (not UTC)
@@ -245,9 +227,51 @@ function timestampToIso(timestamp: number | string): string {
 }
 
 /**
+ * Helper function to filter and format time entries for a specific task
+ */
+function filterTaskTimeEntries(taskId: string, timeEntries: any[]): string | null {
+  if (!timeEntries || timeEntries.length === 0) {
+    return null;
+  }
+
+  // Filter entries for this specific task
+  const taskEntries = timeEntries.filter((entry: any) => entry.task?.id === taskId);
+
+  if (taskEntries.length === 0) {
+    return null;
+  }
+
+  // Group time entries by user (same logic as original getTaskTimeEntries)
+  const timeByUser = new Map<string, number>();
+
+  taskEntries.forEach((entry: any) => {
+    const username = entry.user?.username || 'Unknown User';
+    const currentTime = timeByUser.get(username) || 0;
+    const entryDurationMs = parseInt(entry.duration) || 0;
+    timeByUser.set(username, currentTime + entryDurationMs);
+  });
+
+  // Format results (same logic as original)
+  const userTimeEntries: string[] = [];
+
+  for (const [username, totalMs] of timeByUser.entries()) {
+    const hours = totalMs / (1000 * 60 * 60);
+    const displayHours = Math.floor(hours);
+    const displayMinutes = Math.round((hours - displayHours) * 60);
+    const timeDisplay = displayHours > 0 ? 
+      `${displayHours}h ${displayMinutes}m` : 
+      `${displayMinutes}m`;
+
+    userTimeEntries.push(`${username}: ${timeDisplay}`);
+  }
+
+  return userTimeEntries.length > 0 ? userTimeEntries.join(', ') : null;
+}
+
+/**
  * Helper function to generate consistent task metadata
  */
-export async function generateTaskMetadata(task: any): Promise<ContentBlock> {
+export async function generateTaskMetadata(task: any, timeEntries?: any[], isDetailView: boolean = false): Promise<ContentBlock> {
   let spaceName = task.space?.name || 'Unknown Space';
   let spaceIdForDisplay = task.space?.id || 'N/A';
 
@@ -294,10 +318,13 @@ export async function generateTaskMetadata(task: any): Promise<ContentBlock> {
     metadataLines.push(`time_estimate: ${hours}h ${minutes}m`);
   }
 
-  // Add time booked (tracked time entries)
-  const timeBooked = await getTaskTimeEntries(task.id);
-  if (timeBooked) {
-    metadataLines.push(`time_booked: ${timeBooked}`);
+  // Add time booked (tracked time entries) - only if timeEntries provided
+  if (timeEntries) {
+    const timeBooked = filterTaskTimeEntries(task.id, timeEntries);
+    if (timeBooked) {
+      const disclaimer = isDetailView ? "" : " (last 30 days)";
+      metadataLines.push(`time_booked${disclaimer}: ${timeBooked}`);
+    }
   }
 
   // Add tags if they exist

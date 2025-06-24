@@ -8,8 +8,8 @@ export function registerSpaceTools(server: McpServer) {
   server.tool(
     "searchSpaces",
     [
-      "Searches spaces (sometimes called projects or boards) by name or ID with fuzzy matching.",
-      "If 5 or fewer spaces match, automatically fetches all lists and folders within those spaces to provide a complete tree structure.",
+      "Searches spaces (sometimes called projects) by name or ID with fuzzy matching.",
+      "If 5 or fewer spaces match, automatically fetches all lists (sometimes called boards) and folders within those spaces to provide a complete tree structure.",
       "If more than 5 spaces match, returns only space information with guidance to search more precisely.",
       "You can search by space name (fuzzy matching) or provide an exact space ID.",
       "Always reference spaces by their URLs when discussing projects or suggesting actions."

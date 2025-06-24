@@ -13,30 +13,42 @@ export function isTaskId(str: string): boolean {
   return /^[a-z0-9]{6,9}$/i.test(str);
 }
 
-// Cache for current user info to avoid repeated API calls
-let cachedUserData: any = null;
+// Cache for current user info to avoid repeated API calls and race conditions
+let cachedUserPromise: Promise<any> | null = null;
 
 /**
  * Get current authenticated user information from ClickUp API
- * Caches the result after first successful fetch to avoid repeated API calls during the session
+ * Caches the promise to prevent race conditions on concurrent calls
  */
 export async function getCurrentUser() {
-  // Return cached data if available
-  if (cachedUserData) {
-    return cachedUserData;
+  // Return cached promise if available
+  if (cachedUserPromise) {
+    return cachedUserPromise;
   }
 
-  const userResponse = await fetch("https://api.clickup.com/api/v2/user", {
-    headers: { Authorization: CONFIG.apiKey },
-  });
+  // Create the fetch promise
+  const fetchPromise = (async () => {
+    const userResponse = await fetch("https://api.clickup.com/api/v2/user", {
+      headers: { Authorization: CONFIG.apiKey },
+    });
 
-  if (!userResponse.ok) {
-    throw new Error(`Error fetching user info: ${userResponse.status} ${userResponse.statusText}`);
-  }
+    if (!userResponse.ok) {
+      throw new Error(`Error fetching user info: ${userResponse.status} ${userResponse.statusText}`);
+    }
 
-  // Cache the result for future calls
-  cachedUserData = await userResponse.json();
-  return cachedUserData;
+    return await userResponse.json();
+  })();
+
+  // Cache the promise
+  cachedUserPromise = fetchPromise;
+  
+  // Auto-cleanup after 60 seconds
+  setTimeout(() => {
+    cachedUserPromise = null;
+    console.error(`Auto-cleaned user data cache`);
+  }, GLOBAL_REFRESH_INTERVAL);
+  
+  return fetchPromise;
 }
 
 /**
@@ -112,11 +124,12 @@ export function getSpaceDetails(spaceId: string): Promise<any> {
   return fetchPromise;
 }
 
-// Task search index management
-const taskIndices: Map<string, Fuse<any>> = new Map();
+// Task search index management - cache promises to prevent race conditions
+const taskIndices: Map<string, Promise<Fuse<any>>> = new Map();
 
 /**
  * Get or create a task search index with specified filters
+ * Caches promises to prevent race conditions on concurrent calls
  */
 export async function getTaskSearchIndex(
   space_ids?: string[],
@@ -130,26 +143,29 @@ export async function getTaskSearchIndex(
     assignees: assignees?.sort()
   });
 
-  // Check for existing valid index
-  const cachedIndex = taskIndices.get(key);
-  if (cachedIndex) {
-    return cachedIndex;
+  // Check for existing valid index promise
+  const cachedPromise = taskIndices.get(key);
+  if (cachedPromise) {
+    return cachedPromise;
   }
 
-  // Fetch tasks with specified filters
-  console.error(`Refreshing task index for filters: ${key}`);
-  const tasks = await fetchTasks(space_ids, list_ids, assignees);
-  const index = createFuseIndex(tasks);
+  // Create the fetch promise
+  const fetchPromise = (async (): Promise<Fuse<any>> => {
+    console.error(`Refreshing task index for filters: ${key}`);
+    const tasks = await fetchTasks(space_ids, list_ids, assignees);
+    const index = createFuseIndex(tasks);
+    console.error(`Task index created with ${tasks.length} tasks`);
+    return index;
+  })();
 
-  // Store with auto-cleanup
-  taskIndices.set(key, index);
+  // Store promise with auto-cleanup
+  taskIndices.set(key, fetchPromise);
   setTimeout(() => {
     taskIndices.delete(key);
     console.error(`Auto-cleaned index for filters: ${key}`);
   }, GLOBAL_REFRESH_INTERVAL);
 
-  console.error(`Task index created with ${tasks.length} tasks`);
-  return index;
+  return fetchPromise;
 }
 
 /**
@@ -295,56 +311,60 @@ export function formatLinksSection(links: { text: string; url: string }[]): stri
   return `\n\n**📌 Quick Links:**\n${linkLines.join('\n')}`;
 }
 
-// Space search index cache
-let spaceSearchIndex: Fuse<any> | null = null;
+// Space search index cache - cache promise to prevent race conditions
+let spaceSearchIndexPromise: Promise<Fuse<any> | null> | null = null;
 
 /**
  * Get or refresh the space search index
+ * Caches promise to prevent race conditions on concurrent calls
  */
 export async function getSpaceSearchIndex(): Promise<Fuse<any> | null> {
-  // Return cached index if available
-  if (spaceSearchIndex) {
-    return spaceSearchIndex;
+  // Return cached promise if available
+  if (spaceSearchIndexPromise) {
+    return spaceSearchIndexPromise;
   }
 
-  // Fetch spaces data
-  try {
-    const url = `https://api.clickup.com/api/v2/team/${CONFIG.teamId}/space`;
-    const response = await fetch(url, {
-      headers: { Authorization: CONFIG.apiKey },
-    });
+  // Create the fetch promise
+  const fetchPromise = (async (): Promise<Fuse<any> | null> => {
+    try {
+      const url = `https://api.clickup.com/api/v2/team/${CONFIG.teamId}/space`;
+      const response = await fetch(url, {
+        headers: { Authorization: CONFIG.apiKey },
+      });
 
-    if (!response.ok) {
-      throw new Error(`Error fetching spaces: ${response.status} ${response.statusText}`);
+      if (!response.ok) {
+        throw new Error(`Error fetching spaces: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      const spacesData = data.spaces || [];
+
+      // Create Fuse search index
+      return new Fuse(spacesData as any[], {
+        keys: [
+          { name: 'name', weight: 0.7 },
+          { name: 'id', weight: 0.6 }
+        ],
+        includeScore: true,
+        threshold: 0.4,
+        minMatchCharLength: 1,
+      });
+    } catch (error) {
+      console.error('Error creating space search index:', error);
+      return null;
     }
+  })();
 
-    const data = await response.json();
-    const spacesData = data.spaces || [];
+  // Cache the promise
+  spaceSearchIndexPromise = fetchPromise;
 
-    // Create Fuse search index
-    spaceSearchIndex = new Fuse(spacesData as any[], {
-      keys: [
-        { name: 'name', weight: 0.7 },
-        { name: 'id', weight: 0.6 }
-      ],
-      includeScore: true,
-      threshold: 0.4,
-      minMatchCharLength: 1,
-    });
+  // Auto-cleanup after 60 seconds
+  setTimeout(() => {
+    spaceSearchIndexPromise = null;
+    console.error('Auto-cleaned space search index');
+  }, GLOBAL_REFRESH_INTERVAL);
 
-    // Auto-cleanup after 60 seconds
-    setTimeout(() => {
-      spaceSearchIndex = null;
-      console.error('Auto-cleaned space search index');
-    }, GLOBAL_REFRESH_INTERVAL);
-
-    console.error(`Space search index created with ${spacesData?.length || 0} spaces`);
-    return spaceSearchIndex;
-
-  } catch (error) {
-    console.error('Error creating space search index:', error);
-    return null;
-  }
+  return fetchPromise;
 }
 
 
@@ -416,5 +436,60 @@ export async function getSpaceContent(spaceId: string): Promise<{ lists: any[], 
     console.error(`Auto-cleaned space content cache for ${spaceId}`);
   }, GLOBAL_REFRESH_INTERVAL);
 
+  return fetchPromise;
+}
+
+// Cache for team members to avoid repeated API calls and race conditions
+let cachedTeamMembersPromise: Promise<string[]> | null = null;
+
+/**
+ * Gets all team members from ClickUp API with caching
+ */
+export async function getAllTeamMembers(): Promise<string[]> {
+  // Return cached promise if available
+  if (cachedTeamMembersPromise) {
+    return cachedTeamMembersPromise;
+  }
+
+  // Create the fetch promise
+  const fetchPromise = (async (): Promise<string[]> => {
+    try {
+      const response = await fetch(`https://api.clickup.com/api/v2/team`, {
+        headers: { Authorization: CONFIG.apiKey },
+      });
+
+      if (!response.ok) {
+        console.error(`Error fetching teams: ${response.status} ${response.statusText}`);
+        return [];
+      }
+
+      const data = await response.json();
+      if (!data.teams || !Array.isArray(data.teams)) {
+        return [];
+      }
+
+      // Find the team that matches our configured team ID and extract all user IDs
+      const currentTeam = data.teams.find((team: any) => team.id === CONFIG.teamId);
+      if (!currentTeam || !currentTeam.members || !Array.isArray(currentTeam.members)) {
+        console.error(`Team ${CONFIG.teamId} not found or has no members`);
+        return [];
+      }
+
+      return currentTeam.members.map((member: any) => member.user?.id).filter(Boolean);
+    } catch (error) {
+      console.error('Error fetching team members:', error);
+      return [];
+    }
+  })();
+
+  // Cache the promise
+  cachedTeamMembersPromise = fetchPromise;
+  
+  // Auto-cleanup after 60 seconds
+  setTimeout(() => {
+    cachedTeamMembersPromise = null;
+    console.error(`Auto-cleaned team members cache`);
+  }, GLOBAL_REFRESH_INTERVAL);
+  
   return fetchPromise;
 }

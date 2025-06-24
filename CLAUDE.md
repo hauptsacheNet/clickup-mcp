@@ -1,5 +1,7 @@
 - ClickUp api documentation is available here: https://developer.clickup.com/reference/gettasks
 - Think about api limits. ClickUp allows 100 api calls per minute per user. A typical workflow must not exceed that.
+- Implement caching by using a global variable and setting it to null after a setTimeout with GLOBAL_REFRESH_INTERVAL. The ClickUp Api limit resets after a minute, so we usually don't need to cache longer than a minute.
+- Cache promises, not results, to prevent race conditions when multiple concurrent calls happen before the first completes (see getAllTeamMembers, getCurrentUser, getTaskSearchIndex, getSpaceSearchIndex patterns).
 - Use "npm run build" to compile the typescript for validation.
 - Use "npm run cli" to test mcp calls.
 - Use console.error to prevent writing log messages to stdout.

@@ -107,6 +107,7 @@ async function main() {
     // Call the tool's callback function
     const result = await tool.callback(params);
     console.dir(result.content);
+    process.exit(0);
   } catch (error: unknown) {
     if (error instanceof Error) {
       console.error("Error:", error.message);
