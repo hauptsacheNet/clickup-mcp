@@ -161,6 +161,7 @@ This MCP server can be configured using environment variables:
 - `CLICKUP_TEAM_ID`: (Required) Your ClickUp Team ID (formerly Workspace ID).
 - `CLICKUP_MCP_MODE`: (Optional) Controls which tools are available. Options: `read-minimal`, `read`, `write` (default).
 - `MAX_IMAGES`: (Optional) The maximum number of images to return for a task in `getTaskById`. Defaults to 4.
+- `MAX_RESPONSE_SIZE_MB`: (Optional) The maximum response size in megabytes for `getTaskById`. Uses intelligent size budgeting to fit the most important images within the limit. Defaults to 1.
 - `CLICKUP_PRIMARY_LANGUAGE`: (Optional) A hint for the primary language used in your ClickUp tasks (e.g., "de" for German, "en" for English). This helps the `searchTask` tool provide more tailored guidance in its description for multilingual searches.
 - `LANG`: (Optional) If `CLICKUP_PRIMARY_LANGUAGE` is not set, the MCP will check this standard environment variable (e.g., "en_US.UTF-8", "de_DE") as a fallback to infer the primary language.
 
@@ -219,7 +220,7 @@ This ensures no existing content is ever lost while maintaining a clear audit tr
 ## Performance & Limitations
 
 **Optimized for AI Workflows:**
-- **Image Processing**: Limited to 4 most recent images per task to prevent running into mcp client limitations (configurable via `MAX_IMAGES`)
+- **Smart Image Processing**: Intelligent size budgeting prioritizes the most recent images while respecting both count (`MAX_IMAGES`, default: 4) and total response size limits (`MAX_RESPONSE_SIZE_MB`, default: 1MB)
 - **Search Scope**: Searches within the most recent 1000-3000 tasks to prevent running into rate limits (exact number varies by endpoint)
 - **Search Results**: Returns up to 50 most relevant matches to prevent flooding the agent with too many results
 

@@ -1,9 +1,10 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { processClickUpMarkdown, processClickUpText } from "../clickup-text";
-import { ContentBlock, DatedContentEvent } from "../shared/types";
+import { ContentBlock, DatedContentEvent, ImageMetadataBlock } from "../shared/types";
 import { CONFIG } from "../shared/config";
-import { isTaskId, limitImages, getSpaceDetails, getAllTeamMembers } from "../shared/utils";
+import { isTaskId, getSpaceDetails, getAllTeamMembers } from "../shared/utils";
+import { downloadImages } from "../shared/image-processing";
 
 // Read-specific utility functions
 
@@ -46,16 +47,16 @@ export function registerTaskToolsRead(server: McpServer, userData: any) {
       });
 
       // 4. Flatten sorted events into a single ContentBlock stream
-      let processedEventBlocks: ContentBlock[] = [];
+      let processedEventBlocks: (ContentBlock | ImageMetadataBlock)[] = [];
       for (const event of allDatedEvents) {
         processedEventBlocks.push(...event.contentBlocks);
       }
 
       // 5. Combine task details with processed event blocks
-      const allContentBlocks: ContentBlock[] = [...taskDetailContentBlocks, ...processedEventBlocks];
+      const allContentBlocks: (ContentBlock | ImageMetadataBlock)[] = [...taskDetailContentBlocks, ...processedEventBlocks];
 
-      // 6. Limit images
-      const limitedContent: ContentBlock[] = limitImages(allContentBlocks, CONFIG.maxImages);
+      // 6. Download images with smart size limiting
+      const limitedContent: ContentBlock[] = await downloadImages(allContentBlocks);
 
       return {
         content: limitedContent,
@@ -99,7 +100,7 @@ async function fetchTaskTimeEntries(taskId: string): Promise<any[]> {
   }
 }
 
-async function loadTaskContent(taskId: string): Promise<ContentBlock[]> {
+async function loadTaskContent(taskId: string): Promise<(ContentBlock | ImageMetadataBlock)[]> {
   const response = await fetch(
     `https://api.clickup.com/api/v2/task/${taskId}?include_markdown_description=true&include_subtasks=true`,
     { headers: { Authorization: CONFIG.apiKey } }
@@ -143,7 +144,7 @@ async function loadTaskComments(id: string): Promise<DatedContentEvent[]> {
         text: `Comment by ${comment.user.username} on ${timestampToIso(comment.date)}:`,
       };
 
-      const commentBodyBlocks: ContentBlock[] = await processClickUpText(comment.comment);
+      const commentBodyBlocks: (ContentBlock | ImageMetadataBlock)[] = await processClickUpText(comment.comment);
 
       return {
         date: comment.date, // String timestamp from ClickUp for sorting
@@ -192,9 +193,11 @@ async function loadTimeInStatusHistory(taskId: string): Promise<DatedContentEven
     }
 
     // Deduplicate events based on date and status name to avoid adding current_status if it's identical to the last history entry
-    const uniqueEvents = Array.from(new Map(events.map(event => 
-      [`${event.date}-${event.contentBlocks[0]?.text}`, event] // Keying by date and text content of first block
-    )).values());
+    const uniqueEvents = Array.from(new Map(events.map(event => {
+      const firstBlock = event.contentBlocks[0];
+      const textKey = firstBlock && 'text' in firstBlock ? firstBlock.text : 'unknown';
+      return [`${event.date}-${textKey}`, event];
+    })).values());
 
     return uniqueEvents;
   } catch (error) {

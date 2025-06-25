@@ -51,45 +51,8 @@ export async function getCurrentUser() {
   return fetchPromise;
 }
 
-/**
- * Limits the number of images in the content array, replacing excess images with text placeholders
- * Prioritizes keeping the most recent images (assumes content is ordered with newest items last)
- *
- * @param content Array of content blocks that may contain images
- * @param maxImages Maximum number of images to keep
- * @returns Modified content array with limited images
- */
-export function limitImages(content: ContentBlock[], maxImages: number): ContentBlock[] {
-  // Count how many images we have
-  const imageIndices: number[] = [];
-
-  // Find all image blocks
-  content.forEach((block, index) => {
-    if (block.type === "image") {
-      imageIndices.push(index);
-    }
-  });
-
-  // If we have fewer images than the limit, return the original content
-  if (imageIndices.length <= maxImages) {
-    return content;
-  }
-
-  // Determine which images to keep (the most recent ones)
-  // We want to keep the last 'maxImages' images
-  const imagesToRemove = imageIndices.slice(0, imageIndices.length - maxImages);
-
-  // Create a new content array with excess images replaced by text
-  return content.map((block, index) => {
-    if (block.type === "image" && imagesToRemove.includes(index)) {
-      return {
-        type: "text" as const,
-        text: "[Image removed due to size limitations. Only the most recent images are shown.]",
-      };
-    }
-    return block;
-  });
-}
+// Re-export image processing functions for backward compatibility
+export { downloadImages } from "./image-processing";
 
 const spaceCache = new Map<string, Promise<any>>(); // Global cache for space details promises
 

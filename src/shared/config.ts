@@ -25,6 +25,7 @@ export const CONFIG = {
   apiKey: process.env.CLICKUP_API_KEY!,
   teamId: process.env.CLICKUP_TEAM_ID!,
   maxImages: process.env.MAX_IMAGES ? parseInt(process.env.MAX_IMAGES) : 4,
+  maxResponseSizeMB: process.env.MAX_RESPONSE_SIZE_MB ? parseFloat(process.env.MAX_RESPONSE_SIZE_MB) : 1,
   primaryLanguageHint: detectedLanguageHint, // Store the cleaned code directly
   mode: mcpMode,
 };
