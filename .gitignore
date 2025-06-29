@@ -1,3 +1,14 @@
-dist
-node_modules
+# Development files
+node_modules/
 .env
+.env.*
+*.log
+
+# IDE files
+.idea/
+.vscode/
+.claude/
+
+# Compiled output
+dist
+clickup-mcp.dxt

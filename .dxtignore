@@ -1,0 +1,24 @@
+# Development files
+node_modules/
+.env
+.env.*
+*.log
+
+# IDE files
+.idea/
+.vscode/
+.claude/
+
+# Build artifacts that aren't needed in distribution
+src/
+tsconfig.json
+.gitignore
+
+# Local development files
+CLAUDE.local.md
+
+# Test files
+test/
+tests/
+*.test.js
+*.test.ts

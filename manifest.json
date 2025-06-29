@@ -1,0 +1,135 @@
+{
+  "dxt_version": "0.1",
+  "name": "@hauptsache.net/clickup-mcp",
+  "display_name": "ClickUp",
+  "version": "1.1.1",
+  "description": "Transform your AI assistant into a powerful ClickUp integration for both agentic coding and productivity management. Enables seamless task context sharing, intelligent search, time tracking, and complete project management workflows.",
+  "author": {
+    "name": "Marco Pfeiffer",
+    "email": "marco@hauptsache.net"
+  },
+  "homepage": "https://www.hauptsache.net",
+  "documentation": "https://github.com/hauptsacheNet/clickup-mcp/blob/main/README.md",
+  "support": "https://github.com/hauptsacheNet/clickup-mcp/issues",
+  "server": {
+    "type": "node",
+    "entry_point": "dist/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": [
+        "${__dirname}/dist/index.js"
+      ],
+      "env": {
+        "CLICKUP_API_KEY": "${user_config.clickup_api_key}",
+        "CLICKUP_TEAM_ID": "${user_config.clickup_team_id}",
+        "MAX_IMAGES": "${user_config.max_images}",
+        "MAX_RESPONSE_SIZE_MB": "${user_config.max_response_size_mb}",
+        "CLICKUP_PRIMARY_LANGUAGE": "${user_config.clickup_primary_language}"
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "getTaskById",
+      "description": "Get a ClickUp task with images and comments by ID. Always use this URL when referencing tasks in conversations or sharing with others."
+    },
+    {
+      "name": "searchTasks",
+      "description": "Search tasks by name, content, assignees, and ID with fuzzy matching and support for multiple search terms (OR logic). Can filter by list_ids, space_ids, todo status, or tasks assigned to current user."
+    },
+    {
+      "name": "addComment",
+      "description": "Add a comment to a specific task with linking best practices and progress updates."
+    },
+    {
+      "name": "updateTask",
+      "description": "Update various aspects of an existing task including name, description (append-only), status, priority, dates, tags, assignees, and parent relationships."
+    },
+    {
+      "name": "createTask",
+      "description": "Create a new task in a specific list with full markdown support, assignment to users, and automatic linking to related tasks."
+    },
+    {
+      "name": "searchSpaces",
+      "description": "Search spaces (projects) by name or ID with fuzzy matching. Automatically fetches complete tree structure with lists and folders for 5 or fewer matches."
+    },
+    {
+      "name": "getListInfo",
+      "description": "Get comprehensive information about a list including description, available statuses, space tags, and project context for task creation."
+    },
+    {
+      "name": "updateListInfo",
+      "description": "Append documentation or context to a list's description (append-only for safety) with markdown support and timestamp tracking."
+    },
+    {
+      "name": "getTimeEntries",
+      "description": "Get time entries for a specific task or all user's time entries with hierarchical display (List -> Task -> User -> Entries). Supports date filtering and team member inclusion."
+    },
+    {
+      "name": "createTimeEntry",
+      "description": "Create a time entry (book time) on a task for the current user using decimal hours format with optional description and start time."
+    }
+  ],
+  "user_config": {
+    "clickup_api_key": {
+      "type": "string",
+      "title": "ClickUp API Key",
+      "description": "Your ClickUp API key. Get it from Profile → Settings → Apps → API Token",
+      "required": true,
+      "sensitive": true
+    },
+    "clickup_team_id": {
+      "type": "string", 
+      "title": "ClickUp Team ID",
+      "description": "Your ClickUp Team ID (the ~7 digit number in the URL when in settings)",
+      "required": true
+    },
+    "max_images": {
+      "type": "number",
+      "title": "Max Images",
+      "description": "Maximum number of images to return for a task in getTaskById",
+      "default": 4,
+      "required": false
+    },
+    "max_response_size_mb": {
+      "type": "number",
+      "title": "Max Response Size (MB)",
+      "description": "Maximum response size in megabytes for getTaskById",
+      "default": 1,
+      "required": false
+    },
+    "clickup_primary_language": {
+      "type": "string",
+      "title": "Primary Language",
+      "description": "Primary language hint for search optimization (e.g., 'de' for German, 'en' for English)",
+      "required": false
+    }
+  },
+  "platforms": ["darwin", "linux", "win32"],
+  "capabilities": {
+    "tools": true,
+    "resources": false,
+    "prompts": false,
+    "sampling": false
+  },
+  "categories": ["productivity", "project-management", "development", "time-tracking"],
+  "keywords": [
+    "clickup",
+    "mcp",
+    "model-context-protocol",
+    "llm",
+    "ai",
+    "ticket",
+    "time-tracking",
+    "productivity",
+    "project-management",
+    "task-management",
+    "agentic-coding",
+    "automation"
+  ],
+  "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hauptsacheNet/clickup-mcp.git"
+  }
+}

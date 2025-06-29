@@ -1,7 +1,7 @@
 {
   "name": "@hauptsache.net/clickup-mcp",
   "version": "1.1.1",
-  "description": "A minimal implementation of a Model Context Protocol (MCP) server for ClickUp integration",
+  "description": "Transform your AI assistant into a powerful ClickUp integration for both agentic coding and productivity management. Enables seamless task context sharing, intelligent search, time tracking, and complete project management workflows.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": "dist/index.js",
@@ -23,9 +23,19 @@
     "mcp",
     "model-context-protocol",
     "llm",
-    "ai"
+    "ai",
+    "ticket",
+    "time-tracking",
+    "productivity",
+    "project-management",
+    "task-management",
+    "agentic-coding",
+    "automation"
   ],
-  "author": "",
+  "author": {
+    "name": "Marco Pfeiffer",
+    "email": "marco@hauptsache.net"
+  },
   "license": "ISC",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.9.0",

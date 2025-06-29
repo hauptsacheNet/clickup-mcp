@@ -157,6 +157,10 @@ Add the mode to your MCP configuration:
 
 This MCP server can be configured using environment variables:
 
+### ⚠️ Breaking Changes for v1.2.0+
+- **Image Response Size Limiting**: A new `MAX_RESPONSE_SIZE_MB` environment variable (default: 1MB) may cause existing tasks with large images to display fewer images than before. To restore previous behavior, set `MAX_RESPONSE_SIZE_MB=10` (or higher) in your environment.
+- **Enhanced API Rate Limiting**: The search indexing now uses more conservative API call patterns to prevent rate limit exhaustion. Large workspaces may experience slightly slower initial search index building.
+
 - `CLICKUP_API_KEY`: (Required) Your ClickUp API key.
 - `CLICKUP_TEAM_ID`: (Required) Your ClickUp Team ID (formerly Workspace ID).
 - `CLICKUP_MCP_MODE`: (Optional) Controls which tools are available. Options: `read-minimal`, `read`, `write` (default).
