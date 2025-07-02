@@ -92,8 +92,7 @@ Turn natural language into powerful ClickUp actions:
        "clickup": {
          "command": "npx",
          "args": [
-           "-y",
-           "@hauptsache.net/clickup-mcp@1"
+           "@hauptsache.net/clickup-mcp@latest"
          ],
          "env": {
            "CLICKUP_API_KEY": "your_api_key",
