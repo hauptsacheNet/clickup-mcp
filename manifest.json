@@ -2,7 +2,7 @@
   "dxt_version": "0.1",
   "name": "@hauptsache.net/clickup-mcp",
   "display_name": "ClickUp",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "Transform your AI assistant into a powerful ClickUp integration for both agentic coding and productivity management. Enables seamless task context sharing, intelligent search, time tracking, and complete project management workflows.",
   "author": {
     "name": "Marco Pfeiffer",
