@@ -1,7 +1,7 @@
 {
   "name": "@hauptsache.net/clickup-mcp",
   "version": "1.2.0",
-  "description": "Transform your AI assistant into a powerful ClickUp integration for both agentic coding and productivity management. Enables seamless task context sharing, intelligent search, time tracking, and complete project management workflows.",
+  "description": "Search, create, and retrieve tasks, add comments, and track time through natural language commands.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": "dist/index.js",

@@ -1,22 +1,9 @@
 # ClickUp MCP for AI Assistants
 
-Transform your AI assistant into a powerful ClickUp integration for both **agentic coding** and **productivity management**. This Model Context Protocol (MCP) server enables Claude, Windsurf, Cursor, and other AI assistants to seamlessly interact with your ClickUp workspace.
+Model Context Protocol (MCP) server enabling AI assistants to interact with ClickUp workspaces. Get complete task context with comments and images, search across projects, create and update tasks, collaborate through comments, and track time - all through natural language.
 
 > **⚠️ Experimental Software Notice**  
 > This MCP is experimental and under active development. While implemented with great care to prevent data loss through append-only description updates and other safety measures, it cannot be guaranteed to be completely safe. Please use with caution, especially in production environments. Always test in a non-critical workspace first. 🧪
-
-## Two Powerful Use Cases
-
-### 🛠️ **For Developers & Agentic Coding**
-Originally built to supercharge coding sessions by providing complete task context to AI coding assistants:
-
-- **Instant Requirements**: *"Get task CU-abc123"* → AI gets full requirements, acceptance criteria, comments, and images
-- **Complete Context**: Pass entire task histories to Claude Code, Windsurf, or Cursor for informed development
-- **Visual Specifications**: Include embedded wireframes, mockups, and screenshots in your coding context
-- **Implementation History**: Access all previous discussions and decisions for better code alignment
-
-### 📋 **For Project Management & Productivity**
-Extended capabilities for conversational ClickUp management and daily workflow optimization.
 
 ## What You Can Do
 
@@ -155,10 +142,6 @@ Add the mode to your MCP configuration:
 ## Configuration
 
 This MCP server can be configured using environment variables:
-
-### ⚠️ Breaking Changes for v1.2.0+
-- **Image Response Size Limiting**: A new `MAX_RESPONSE_SIZE_MB` environment variable (default: 1MB) may cause existing tasks with large images to display fewer images than before. To restore previous behavior, set `MAX_RESPONSE_SIZE_MB=10` (or higher) in your environment.
-- **Enhanced API Rate Limiting**: The search indexing now uses more conservative API call patterns to prevent rate limit exhaustion. Large workspaces may experience slightly slower initial search index building.
 
 - `CLICKUP_API_KEY`: (Required) Your ClickUp API key.
 - `CLICKUP_TEAM_ID`: (Required) Your ClickUp Team ID (formerly Workspace ID).

@@ -3,7 +3,7 @@
   "name": "@hauptsache.net/clickup-mcp",
   "display_name": "ClickUp",
   "version": "1.2.0",
-  "description": "Transform your AI assistant into a powerful ClickUp integration for both agentic coding and productivity management. Enables seamless task context sharing, intelligent search, time tracking, and complete project management workflows.",
+  "description": "Search, create, and retrieve tasks, add comments, and track time through natural language commands.",
   "author": {
     "name": "Marco Pfeiffer",
     "email": "marco@hauptsache.net",
