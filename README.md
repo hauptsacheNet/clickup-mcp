@@ -236,4 +236,4 @@ These limitations ensure reliable performance while covering the most common use
 
 ## License
 
-ISC
+MIT

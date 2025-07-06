@@ -36,7 +36,7 @@
     "name": "Marco Pfeiffer",
     "email": "marco@hauptsache.net"
   },
-  "license": "ISC",
+  "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.9.0",
     "fuse.js": "^7.1.0",
