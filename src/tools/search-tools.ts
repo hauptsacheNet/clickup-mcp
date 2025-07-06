@@ -1,7 +1,7 @@
 import {McpServer} from "@modelcontextprotocol/sdk/server/mcp.js";
 import {z} from "zod";
 import {CONFIG} from "../shared/config";
-import {isTaskId, getTaskSearchIndex, getAllTeamMembers} from "../shared/utils";
+import {isTaskId, getTaskSearchIndex, getAllTeamMembers, performMultiTermSearch} from "../shared/utils";
 import {generateTaskMetadata} from "./task-tools";
 
 const MAX_SEARCH_RESULTS = 50;
@@ -10,7 +10,7 @@ const MAX_SEARCH_RESULTS = 50;
 export function registerSearchTools(server: McpServer, userData: any) {
   // Dynamically construct the searchTasks description
   const searchTasksDescriptionBase = [
-    "Searches tasks (sometimes called Tickets or Cards) by name, content, assignees, and ID (case insensitive) with fuzzy matching and support for multiple search terms (OR logic).",
+    "Searches tasks (sometimes called Tickets or Cards) by name, content, assignees, and ID with fuzzy matching and support for multiple search terms (OR logic).",
     "Can filter by multiple list_ids, space_ids, todo status, or tasks assigned to the current user. If no search terms provided, returns most recently updated tasks.",
     "Can also be used to find tasks for the current user by providing the assigned_to_me flag."
   ];
@@ -111,40 +111,17 @@ export function registerSearchTools(server: McpServer, userData: any) {
         };
       }
 
-      // Filter valid search terms
-      const validTerms = terms.filter(term => term && term.trim().length > 0);
-      if (validTerms.length === 0) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: "No valid search terms provided.",
-            },
-          ],
-        };
-      }
-
+      // Create a results map to track unique tasks with scores
       const uniqueResults = new Map<string, { item: any, score: number }>();
 
-      // Search with each term
-      validTerms.forEach(term => {
-        const results = searchIndex.search(term.toLowerCase());
-        results.forEach(result => {
-          if (result.item && typeof result.item.id === 'string') {
-            const currentScore = result.score ?? 1;
-            const existing = uniqueResults.get(result.item.id);
-            if (!existing || currentScore < existing.score) {
-              uniqueResults.set(result.item.id, {
-                item: result.item,
-                score: currentScore
-              });
-            }
-          }
-        });
+      // Perform multi-term search with aggressive boosting
+      const searchResults = await performMultiTermSearch(searchIndex, terms);
+      searchResults.forEach(task => {
+        uniqueResults.set(task.id, { item: task, score: 0.1 }); // Give search results a good score
       });
 
       // Task ID Fallback Logic
-      const potentialTaskIds = validTerms.filter(isTaskId);
+      const potentialTaskIds = terms.filter(isTaskId);
       const foundTaskIdsByFuse = new Set(Array.from(uniqueResults.keys()).map(id => id.toLowerCase()));
 
       const taskIdsToFetchDirectly = potentialTaskIds.filter(id => {

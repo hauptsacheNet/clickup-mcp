@@ -1,8 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { CONFIG } from "../shared/config";
 import { ContentBlock } from "../shared/types";
-import { generateSpaceUrl, generateListUrl, generateFolderUrl, getSpaceSearchIndex, getSpaceContent } from "../shared/utils";
+import { generateSpaceUrl, generateListUrl, generateFolderUrl, getSpaceSearchIndex, getSpaceContent, performMultiTermSearch } from "../shared/utils";
 
 export function registerSpaceTools(server: McpServer) {
   server.tool(
@@ -36,39 +35,12 @@ export function registerSpaceTools(server: McpServer) {
           // Return all spaces if no search terms
           matchingSpaces = (searchIndex as any)._docs || [];
         } else {
-          // Search with fuzzy matching
-          const uniqueResults = new Map<string, { item: any, score: number }>();
-          
-          terms.forEach(term => {
-            const trimmedTerm = term.trim();
-            if (trimmedTerm.length === 0) return;
-
-            // Check if it's an exact space ID first
-            const exactMatch = (searchIndex as any)._docs.find((space: any) => space.id === trimmedTerm);
-            if (exactMatch) {
-              uniqueResults.set(exactMatch.id, { item: exactMatch, score: 0 });
-              return;
-            }
-
-            // Fuzzy search
-            const results = searchIndex.search(trimmedTerm);
-            results.forEach(result => {
-              if (result.item && typeof result.item.id === 'string') {
-                const currentScore = result.score ?? 1;
-                const existing = uniqueResults.get(result.item.id);
-                if (!existing || currentScore < existing.score) {
-                  uniqueResults.set(result.item.id, {
-                    item: result.item,
-                    score: currentScore
-                  });
-                }
-              }
-            });
-          });
-
-          matchingSpaces = Array.from(uniqueResults.values())
-            .sort((a, b) => a.score - b.score)
-            .map(entry => entry.item);
+          // Perform multi-term search with aggressive boosting
+          matchingSpaces = await performMultiTermSearch(
+            searchIndex,
+            terms
+            // No ID matcher or direct fetcher for spaces - they don't have direct API endpoints
+          );
         }
 
         // Filter by archived status
@@ -102,7 +74,7 @@ export function registerSpaceTools(server: McpServer) {
         const spacesWithContent = await Promise.all(spaceContentPromises);
         const contentBlocks: ContentBlock[] = [];
 
-        spacesWithContent.forEach(({ space, lists, folders }, index) => {
+        spacesWithContent.forEach(({ space, lists, folders }) => {
           const spaceLines: string[] = [];
           const totalLists = lists.length + folders.reduce((sum, f) => sum + (f.lists?.length || 0), 0);
 
@@ -170,14 +142,6 @@ export function registerSpaceTools(server: McpServer) {
             type: "text" as const,
             text: spaceLines.join('\n')
           });
-
-          // Add separator between spaces (except for the last one)
-          if (index < spacesWithContent.length - 1) {
-            contentBlocks.push({
-              type: "text" as const,
-              text: '─'.repeat(50)
-            });
-          }
         });
 
         const totalLists = spacesWithContent.reduce((sum, { lists, folders }) => 

@@ -1,4 +1,3 @@
-import {ContentBlock} from "./types";
 import {CONFIG} from "./config";
 import Fuse from 'fuse.js';
 
@@ -186,9 +185,10 @@ function createFuseIndex(tasks: any[]): Fuse<any> {
       {name: 'folder.name', weight: 0.2},
       {name: 'space.name', weight: 0.1}
     ],
+    findAllMatches: true,
     includeScore: true,
-    threshold: 0.4,
     minMatchCharLength: 2,
+    threshold: 0.4,
   });
 }
 
@@ -455,4 +455,77 @@ export async function getAllTeamMembers(): Promise<string[]> {
   }, GLOBAL_REFRESH_INTERVAL);
   
   return fetchPromise;
+}
+
+/**
+ * Performs multi-term search with aggressive boosting for items matching multiple terms
+ * @param searchIndex Fuse search index to search within
+ * @param terms Array of search terms
+ * @returns Array of items sorted by relevance (multi-term matches ranked higher)
+ */
+export async function performMultiTermSearch<T>(
+  searchIndex: Fuse<T>,
+  terms: string[]
+): Promise<T[]> {
+  // Filter valid search terms
+  const validTerms = terms.filter(term => term && term.trim().length > 0);
+  if (validTerms.length === 0) {
+    return [];
+  }
+
+  // Track multiple matches per item for aggressive boosting
+  const itemMatches = new Map<string, {
+    item: T,
+    scores: number[],
+    matchedTerms: string[]
+  }>();
+
+  // Collect all matches for each term
+  validTerms.forEach(term => {
+    const results = searchIndex.search(term);
+    results.forEach(result => {
+      if (result.item && typeof (result.item as any).id === 'string') {
+        const itemId = (result.item as any).id;
+        const currentScore = result.score ?? 1;
+        const existing = itemMatches.get(itemId);
+        
+        if (!existing) {
+          itemMatches.set(itemId, {
+            item: result.item,
+            scores: [currentScore],
+            matchedTerms: [term]
+          });
+        } else {
+          existing.scores.push(currentScore);
+          existing.matchedTerms.push(term);
+        }
+      }
+    });
+  });
+
+  // Calculate aggressively boosted scores for multi-term matches
+  const uniqueResults = new Map<string, { item: T, score: number }>();
+  itemMatches.forEach((match, itemId) => {
+    const bestScore = Math.min(...match.scores);
+    const matchCount = match.scores.length;
+    const totalTerms = validTerms.length;
+    
+    // Aggressive multi-term boost: exponential improvement for multiple matches
+    // 1 match: base score
+    // 2+ matches: exponentially better score based on match ratio
+    const matchRatio = matchCount / totalTerms;
+    const boostFactor = Math.pow(0.1, matchRatio * 4); // Very aggressive boost
+    const finalScore = bestScore * boostFactor;
+    
+    uniqueResults.set(itemId, {
+      item: match.item,
+      score: finalScore
+    });
+  });
+
+
+  // Return sorted results (best scores first)
+  return Array.from(uniqueResults.values())
+    .sort((a, b) => a.score - b.score)
+    .map(entry => entry.item);
 }
