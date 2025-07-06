@@ -16,14 +16,12 @@
     "entry_point": "dist/index.js",
     "mcp_config": {
       "command": "node",
-      "args": [
-        "${__dirname}/dist/index.js"
-      ],
+      "args": ["${__dirname}/dist/index.js"],
       "env": {
         "CLICKUP_API_KEY": "${user_config.clickup_api_key}",
         "CLICKUP_TEAM_ID": "${user_config.clickup_team_id}",
-        "MAX_IMAGES": "${user_config.max_images}",
-        "MAX_RESPONSE_SIZE_MB": "${user_config.max_response_size_mb}",
+        "MAX_IMAGES": "4",
+        "MAX_RESPONSE_SIZE_MB": "1",
         "CLICKUP_PRIMARY_LANGUAGE": "${user_config.clickup_primary_language}"
       }
     }
@@ -83,20 +81,6 @@
       "title": "ClickUp Team ID",
       "description": "Your ClickUp Team ID (the ~7 digit number in the URL when in settings)",
       "required": true
-    },
-    "max_images": {
-      "type": "number",
-      "title": "Max Images",
-      "description": "Maximum number of images to return for a task in getTaskById",
-      "default": 4,
-      "required": false
-    },
-    "max_response_size_mb": {
-      "type": "number",
-      "title": "Max Response Size (MB)",
-      "description": "Maximum response size in megabytes for getTaskById",
-      "default": 1,
-      "required": false
     },
     "clickup_primary_language": {
       "type": "string",
