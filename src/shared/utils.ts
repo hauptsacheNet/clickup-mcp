@@ -205,14 +205,14 @@ export function generateTaskUrl(taskId: string): string {
  * Generate a ClickUp list URL from a list ID
  */
 export function generateListUrl(listId: string): string {
-  return `https://app.clickup.com/v/l/${listId}`;
+  return `https://app.clickup.com/${CONFIG.teamId}/v/li/${listId}`;
 }
 
 /**
  * Generate a ClickUp space URL from a space ID
  */
 export function generateSpaceUrl(spaceId: string): string {
-  return `https://app.clickup.com/v/s/${spaceId}`;
+  return `https://app.clickup.com/${CONFIG.teamId}/v/s/${spaceId}`;
 }
 
 /**
