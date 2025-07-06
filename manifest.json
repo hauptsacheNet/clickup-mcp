@@ -6,7 +6,8 @@
   "description": "Transform your AI assistant into a powerful ClickUp integration for both agentic coding and productivity management. Enables seamless task context sharing, intelligent search, time tracking, and complete project management workflows.",
   "author": {
     "name": "Marco Pfeiffer",
-    "email": "marco@hauptsache.net"
+    "email": "marco@hauptsache.net",
+    "url": "https://github.com/Nemo64"
   },
   "homepage": "https://www.hauptsache.net",
   "documentation": "https://github.com/hauptsacheNet/clickup-mcp/blob/main/README.md",
@@ -20,8 +21,6 @@
       "env": {
         "CLICKUP_API_KEY": "${user_config.clickup_api_key}",
         "CLICKUP_TEAM_ID": "${user_config.clickup_team_id}",
-        "MAX_IMAGES": "4",
-        "MAX_RESPONSE_SIZE_MB": "1",
         "CLICKUP_PRIMARY_LANGUAGE": "${user_config.clickup_primary_language}"
       }
     }
