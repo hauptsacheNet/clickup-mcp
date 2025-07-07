@@ -116,7 +116,7 @@ async function loadTaskContent(taskId: string): Promise<(ContentBlock | ImageMet
     // process markdown and download images
     processClickUpMarkdown(
       task.markdown_description || "",
-      task.attachments
+      task.attachments || []
     ),
   ]);
 

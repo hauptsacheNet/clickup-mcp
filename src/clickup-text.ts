@@ -144,15 +144,17 @@ export async function processClickUpText(
  */
 export function processClickUpMarkdown(
   markdownText: string,
-  attachments: ClickUpAttachment[]
+  attachments: ClickUpAttachment[] | null | undefined
 ): (CallToolResult["content"][number] | ImageMetadataBlock)[] {
   const contentBlocks: (CallToolResult["content"][number] | ImageMetadataBlock)[] = [];
   let currentTextBlock = "";
 
   // Create a map of attachment URLs to their full info for easy lookup
   const attachmentMap = new Map<string, ClickUpAttachment>();
-  for (const attachment of attachments) {
-    attachmentMap.set(attachment.url, attachment);
+  if (attachments && Array.isArray(attachments)) {
+    for (const attachment of attachments) {
+      attachmentMap.set(attachment.url, attachment);
+    }
   }
 
   // Regular expression to match markdown image syntax: ![alt text](url)
@@ -220,19 +222,21 @@ export function processClickUpMarkdown(
   }
 
   // Add non-image files inline to the current text block
-  for (const attachment of attachments) {
-    if (!referencedUrls.has(attachment.url)) {
-      // Determine if this is an image based on URL or type
-      const isImage = attachment.thumbnail_large || 
-        /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(attachment.url);
-      
-      if (!isImage) {
-        // This is a non-image file - add inline to current text block
-        const fileName = extractFileNameFromUrl(attachment.url) || "file";
-        const fileType = extractFileTypeFromUrl(attachment.url);
-        const fileTypeText = fileType ? ` (${fileType.toUpperCase()})` : "";
+  if (attachments && Array.isArray(attachments)) {
+    for (const attachment of attachments) {
+      if (!referencedUrls.has(attachment.url)) {
+        // Determine if this is an image based on URL or type
+        const isImage = attachment.thumbnail_large || 
+          /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(attachment.url);
         
-        currentTextBlock += `\nFile: ${fileName}${fileTypeText} - ${attachment.url}`;
+        if (!isImage) {
+          // This is a non-image file - add inline to current text block
+          const fileName = extractFileNameFromUrl(attachment.url) || "file";
+          const fileType = extractFileTypeFromUrl(attachment.url);
+          const fileTypeText = fileType ? ` (${fileType.toUpperCase()})` : "";
+          
+          currentTextBlock += `\nFile: ${fileName}${fileTypeText} - ${attachment.url}`;
+        }
       }
     }
   }
