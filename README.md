@@ -115,21 +115,21 @@ The ClickUp MCP supports three operational modes to balance functionality, secur
 - **📖 `read`**: Full read-only access for project exploration and workflow understanding  
 - **✏️ `write`** (Default): Complete functionality for task management and productivity workflows
 
-| Tool | read-minimal | read | write | Description |
-|------|:------------:|:----:|:-----:|-------------|
-| `getTaskById` | ✅ | ✅ | ✅ | Get complete task details including comments, images, and metadata |
-| `addComment` | ❌ | ❌ | ✅ | Add comments to tasks for collaboration |
-| `updateTask` | ❌ | ❌ | ✅ | Update tasks (status, priority, assignees, etc.) with **SAFE APPEND-ONLY** descriptions |
-| `createTask` | ❌ | ❌ | ✅ | Create new tasks with full markdown support |
-| `searchTasks` | ✅ | ✅ | ✅ | Find tasks by content, keywords, assignees, or project context |
-| `searchSpaces` | ❌ | ✅ | ✅ | Browse workspace structure, project organization, and documents |
-| `getListInfo` | ❌ | ✅ | ✅ | Get list details and available statuses for task creation |
-| `updateListInfo` | ❌ | ❌ | ✅ | **SAFE APPEND-ONLY** updates to list descriptions (preserves existing content) |
-| `getTimeEntries` | ❌ | ✅ | ✅ | View time entries and analyze time spent across projects |
-| `createTimeEntry` | ❌ | ❌ | ✅ | Log time entries for task tracking |
-| `readDocument` | ❌ | ✅ | ✅ | Get document details, page structure, and content with navigation |
-| `searchDocuments` | ❌ | ✅ | ✅ | Search documents by name and space with fuzzy matching and space filtering |
-| `writeDocument` | ❌ | ❌ | ✅ | Universal document and page operations with smart document creation |
+| Tool              | read-minimal | read | write | Description                                                                             |
+|-------------------|:------------:|:----:|:-----:|-----------------------------------------------------------------------------------------|
+| `getTaskById`     |      ✅       |  ✅   |   ✅   | Get complete task details including comments, images, and metadata                      |
+| `addComment`      |      ❌       |  ❌   |   ✅   | Add comments to tasks for collaboration                                                 |
+| `updateTask`      |      ❌       |  ❌   |   ✅   | Update tasks (status, priority, assignees, etc.) with **SAFE APPEND-ONLY** descriptions |
+| `createTask`      |      ❌       |  ❌   |   ✅   | Create new tasks with full markdown support                                             |
+| `searchTasks`     |      ✅       |  ✅   |   ✅   | Find tasks by content, keywords, assignees, or project context                          |
+| `searchSpaces`    |      ❌       |  ✅   |   ✅   | Browse workspace structure, project organization, and documents                         |
+| `getListInfo`     |      ❌       |  ✅   |   ✅   | Get list details and available statuses for task creation                               |
+| `updateListInfo`  |      ❌       |  ❌   |   ✅   | **SAFE APPEND-ONLY** updates to list descriptions (preserves existing content)          |
+| `getTimeEntries`  |      ❌       |  ✅   |   ✅   | View time entries and analyze time spent across projects                                |
+| `createTimeEntry` |      ❌       |  ❌   |   ✅   | Log time entries for task tracking                                                      |
+| `readDocument`    |      ❌       |  ✅   |   ✅   | Get document details, page structure, and content with navigation                       |
+| `searchDocuments` |      ❌       |  ✅   |   ✅   | Search documents by name and space with fuzzy matching and space filtering              |
+| `writeDocument`   |      ❌       |  ❌   |   ✅   | Universal document and page operations with smart document creation                     |
 
 ### Setting the Mode
 
