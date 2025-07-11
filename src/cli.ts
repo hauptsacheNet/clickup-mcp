@@ -8,8 +8,16 @@ async function main() {
   const server = await serverPromise;
   const args = process.argv.slice(2);
   
+  // Special command to show instructions
+  if (args.length === 1 && args[0] === 'instructions') {
+    console.log("Server Instructions:");
+    console.log((server.server as any)._instructions || "No instructions configured");
+    process.exit(0);
+  }
+  
   if (args.length < 1) {
     console.error("Usage: npm run cli <tool-name> [param1=value1 param2=value2 ...]");
+    console.error("       npm run cli instructions");
     console.error("\nAvailable tools:");
     
     // @ts-ignore - Accessing private property for testing purposes
