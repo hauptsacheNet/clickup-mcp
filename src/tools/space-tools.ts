@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { ContentBlock } from "../shared/types";
-import { generateSpaceUrl, generateListUrl, generateFolderUrl, getSpaceSearchIndex, getSpaceContent, performMultiTermSearch } from "../shared/utils";
+import { generateSpaceUrl, generateListUrl, generateFolderUrl, generateDocumentUrl, getSpaceSearchIndex, getSpaceContent, performMultiTermSearch } from "../shared/utils";
 
 export function registerSpaceTools(server: McpServer) {
   server.tool(
@@ -59,93 +59,119 @@ export function registerSpaceTools(server: McpServer) {
           try {
             if (matchingSpaces.length <= 5) {
               // Detailed mode: fetch lists and folders for this space
-              const { lists, folders } = await getSpaceContent(space.id);
-              return { space, lists, folders };
+              const { lists, folders, documents } = await getSpaceContent(space.id);
+              return { space, lists, folders, documents };
             } else {
               // Summary mode: just return space without content
-              return { space, lists: [], folders: [] };
+              return { space, lists: [], folders: [], documents: [] };
             }
           } catch (error) {
             console.error(`Error fetching content for space ${space.id}:`, error);
-            return { space, lists: [], folders: [] };
+            return { space, lists: [], folders: [], documents: [] };
           }
         });
 
         const spacesWithContent = await Promise.all(spaceContentPromises);
         const contentBlocks: ContentBlock[] = [];
+        const isDetailedMode = matchingSpaces.length <= 5;
 
-        spacesWithContent.forEach(({ space, lists, folders }) => {
-          const spaceLines: string[] = [];
-          const totalLists = lists.length + folders.reduce((sum, f) => sum + (f.lists?.length || 0), 0);
+        if (isDetailedMode) {
+          // Detailed mode: create separate blocks for each space
+          spacesWithContent.forEach(({ space, lists, folders, documents }) => {
+            const spaceLines: string[] = [];
+            const totalLists = lists.length + folders.reduce((sum, f) => sum + (f.lists?.length || 0), 0);
 
-          // Space header
-          spaceLines.push(
-            `🏢 SPACE: ${space.name} (space_id: ${space.id}${space.private ? ', private' : ''}${space.archived ? ', archived' : ''}) ${generateSpaceUrl(space.id)}`,
-            `   ${totalLists} lists, ${folders.length} folders`
-          );
+            // Space header
+            spaceLines.push(
+              `🏢 SPACE: ${space.name} (space_id: ${space.id}${space.private ? ', private' : ''}${space.archived ? ', archived' : ''}) ${generateSpaceUrl(space.id)}`,
+              `   ${totalLists} lists, ${folders.length} folders, ${documents.length} documents`
+            );
 
-          // Create a tree structure
-          const hasDirectLists = lists.length > 0;
-          const hasFolders = folders.length > 0;
+            // Create a tree structure
+            const hasDirectLists = lists.length > 0;
+            const hasFolders = folders.length > 0;
+            const hasDocuments = documents.length > 0;
 
-          // Direct lists (not in folders)
-          if (hasDirectLists) {
-            lists.forEach((list: any, listIndex) => {
-              const isLastDirectList = listIndex === lists.length - 1;
-              const isLastOverall = !hasFolders && isLastDirectList;
-              const treeChar = isLastOverall ? '└──' : '├──';
-              const extraInfo = [
-                ...(list.task_count ? [`${list.task_count} tasks`] : []),
-                ...(list.private ? ['private'] : []),
-                ...(list.archived ? ['archived'] : [])
-              ].join(', ');
-              const listLine = `${treeChar} 📝 ${list.name} (list_id: ${list.id}${extraInfo ? `, ${extraInfo}` : ''}) ${generateListUrl(list.id)}`;
-              spaceLines.push(listLine);
+            // Direct lists (not in folders)
+            if (hasDirectLists) {
+              lists.forEach((list: any, listIndex) => {
+                const isLastDirectList = listIndex === lists.length - 1;
+                const isLastOverall = !hasFolders && !hasDocuments && isLastDirectList;
+                const treeChar = isLastOverall ? '└──' : '├──';
+                const extraInfo = [
+                  ...(list.task_count ? [`${list.task_count} tasks`] : []),
+                  ...(list.private ? ['private'] : []),
+                  ...(list.archived ? ['archived'] : [])
+                ].join(', ');
+                const listLine = `${treeChar} 📝 ${list.name} (list_id: ${list.id}${extraInfo ? `, ${extraInfo}` : ''}) ${generateListUrl(list.id)}`;
+                spaceLines.push(listLine);
+              });
+            }
+
+            // Folders and their lists
+            if (hasFolders) {
+              folders.forEach((folder: any, folderIndex) => {
+                const isLastFolder = folderIndex === folders.length - 1;
+                const isLastOverall = !hasDocuments && isLastFolder;
+                const folderTreeChar = isLastOverall ? '└──' : '├──';
+                const folderContinuation = isLastOverall ? '   ' : '│  ';
+                
+                const folderExtraInfo = [
+                  ...(folder.lists?.length ? [`${folder.lists.length} lists`] : []),
+                  ...(folder.private ? ['private'] : []),
+                  ...(folder.archived ? ['archived'] : [])
+                ].join(', ');
+                
+                const folderLine = `${folderTreeChar} 📂 ${folder.name} (folder_id: ${folder.id}${folderExtraInfo ? `, ${folderExtraInfo}` : ''}) ${generateFolderUrl(folder.id)}`;
+                spaceLines.push(folderLine);
+
+                // Lists within this folder
+                if (folder.lists && folder.lists.length > 0) {
+                  folder.lists.forEach((list: any, listIndex: number) => {
+                    const isLastListInFolder = listIndex === folder.lists.length - 1;
+                    const listTreeChar = isLastListInFolder ? '└──' : '├──';
+                    const listExtraInfo = [
+                      ...(list.task_count ? [`${list.task_count} tasks`] : []),
+                      ...(list.private ? ['private'] : []),
+                      ...(list.archived ? ['archived'] : [])
+                    ].join(', ');
+                    const listLine = `${folderContinuation}${listTreeChar} 📝 ${list.name} (list_id: ${list.id}${listExtraInfo ? `, ${listExtraInfo}` : ''}) ${generateListUrl(list.id)}`;
+                    spaceLines.push(listLine);
+                  });
+                }
+              });
+            }
+
+            // Documents attached to this space
+            if (hasDocuments) {
+              documents.forEach((document: any, docIndex) => {
+                const isLastDocument = docIndex === documents.length - 1;
+                const docTreeChar = isLastDocument ? '└──' : '├──';
+                const docLine = `${docTreeChar} 📄 ${document.name} (doc_id: ${document.id}) ${generateDocumentUrl(document.id)}`;
+                spaceLines.push(docLine);
+              });
+            }
+
+            // Add the complete space as a single content block
+            contentBlocks.push({
+              type: "text" as const,
+              text: spaceLines.join('\n')
             });
-          }
+          });
+        } else {
+          // Summary mode: create a single combined block with all spaces
+          const allSpaceLines: string[] = [];
+          spacesWithContent.forEach(({ space }) => {
+            allSpaceLines.push(
+              `🏢 SPACE: ${space.name} (space_id: ${space.id}${space.private ? ', private' : ''}${space.archived ? ', archived' : ''})`
+            );
+          });
 
-          // Folders and their lists
-          if (hasFolders) {
-            folders.forEach((folder: any, folderIndex) => {
-              const isLastFolder = folderIndex === folders.length - 1;
-              const folderTreeChar = isLastFolder ? '└──' : '├──';
-              const folderContinuation = isLastFolder ? '   ' : '│  ';
-              
-              const folderExtraInfo = [
-                ...(folder.lists?.length ? [`${folder.lists.length} lists`] : []),
-                ...(folder.private ? ['private'] : []),
-                ...(folder.archived ? ['archived'] : [])
-              ].join(', ');
-              
-              const folderLine = `${folderTreeChar} 📂 ${folder.name} (folder_id: ${folder.id}${folderExtraInfo ? `, ${folderExtraInfo}` : ''}) ${generateFolderUrl(folder.id)}`;
-              spaceLines.push(folderLine);
-
-              // Lists within this folder
-              if (folder.lists && folder.lists.length > 0) {
-                folder.lists.forEach((list: any, listIndex: number) => {
-                  const isLastListInFolder = listIndex === folder.lists.length - 1;
-                  const listTreeChar = isLastListInFolder ? '└──' : '├──';
-                  const listExtraInfo = [
-                    ...(list.task_count ? [`${list.task_count} tasks`] : []),
-                    ...(list.private ? ['private'] : []),
-                    ...(list.archived ? ['archived'] : [])
-                  ].join(', ');
-                  const listLine = `${folderContinuation}${listTreeChar} 📝 ${list.name} (list_id: ${list.id}${listExtraInfo ? `, ${listExtraInfo}` : ''}) ${generateListUrl(list.id)}`;
-                  spaceLines.push(listLine);
-                });
-              }
-            });
-          }
-
-          // Add the complete space as a single content block
           contentBlocks.push({
             type: "text" as const,
-            text: spaceLines.join('\n')
+            text: allSpaceLines.join('\n')
           });
-        });
-
-        const totalLists = spacesWithContent.reduce((sum, { lists, folders }) => 
-          sum + lists.length + folders.reduce((folderSum, f) => folderSum + (f.lists?.length || 0), 0), 0);
+        }
 
         // Add tip message for summary mode (when there are too many spaces)
         if (matchingSpaces.length > 5) {
@@ -160,8 +186,13 @@ export function registerSpaceTools(server: McpServer) {
             {
               type: "text" as const,
               text: matchingSpaces.length <= 5 
-                ? `Found ${matchingSpaces.length} space(s) with complete tree structure (${totalLists} total lists):`
-                : `Found ${matchingSpaces.length} space(s) - too many to show detailed list information. Please search more precisely to get complete tree structure with lists and folders:`
+                ? (() => {
+                    const totalLists = spacesWithContent.reduce((sum, { lists, folders }) => 
+                      sum + lists.length + folders.reduce((folderSum, f) => folderSum + (f.lists?.length || 0), 0), 0);
+                    const totalDocuments = spacesWithContent.reduce((sum, { documents }) => sum + documents.length, 0);
+                    return `Found ${matchingSpaces.length} space(s) with complete tree structure (${totalLists} total lists, ${totalDocuments} total documents):`;
+                  })()
+                : `Found ${matchingSpaces.length} space(s) - showing names and IDs only. Use more specific search terms to get detailed information:`
             },
             ...contentBlocks
           ],

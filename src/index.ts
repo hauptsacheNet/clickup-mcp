@@ -12,6 +12,7 @@ import { registerSearchTools } from "./tools/search-tools";
 import { registerSpaceTools } from "./tools/space-tools";
 import { registerListToolsRead, registerListToolsWrite } from "./tools/list-tools";
 import { registerTimeToolsRead, registerTimeToolsWrite } from "./tools/time-tools";
+import { registerDocumentToolsRead, registerDocumentToolsWrite } from "./tools/doc-tools";
 
 // Create an MCP server
 const server = new McpServer({
@@ -39,6 +40,7 @@ async function initializeServer() {
     registerSpaceTools(server);
     registerListToolsRead(server);
     registerTimeToolsRead(server);
+    registerDocumentToolsRead(server);
   } else if (CONFIG.mode === 'write') {
     // All tools (full functionality)
     registerTaskToolsRead(server, userData);
@@ -49,6 +51,8 @@ async function initializeServer() {
     registerListToolsWrite(server);
     registerTimeToolsRead(server);
     registerTimeToolsWrite(server);
+    registerDocumentToolsRead(server);
+    registerDocumentToolsWrite(server);
   }
 
   return server;

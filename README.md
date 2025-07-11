@@ -36,6 +36,14 @@ Turn natural language into powerful ClickUp actions:
 - *"What's the latest update on the database migration?"*
 - *"Add a comment to the design task about the new wireframes"*
 
+**Document Management:**
+- *"Find documents about job posting in hauptsache.net space"*
+- *"Search for API documentation across all spaces"*
+- *"Read the API documentation in the development space"*
+- *"Create a new requirements document for the mobile app project"*
+- *"Update the meeting notes with today's decisions"*
+- *"What documents are in the product strategy space?"*
+
 ## Key Features
 
 ### 🔍 **Intelligent Search**
@@ -47,6 +55,7 @@ Turn natural language into powerful ClickUp actions:
 - Full comment histories and team discussions
 - Task descriptions with embedded images  
 - List descriptions and project guidelines
+- Document content with page navigation
 - Access to complete task history and decisions
 
 ### ⏱️ **Time Tracking**
@@ -54,8 +63,9 @@ Turn natural language into powerful ClickUp actions:
 - View historical time logs and entries
 - Query time entries by task or date range
 
-### 📋 **Task Management**
+### 📋 **Task & Document Management**
 - Create and update tasks with markdown descriptions
+- Create, read, and update documents and pages
 - Add comments and collaborate with team members
 - Manage priorities, due dates, assignees, and tags
 - Handle time estimates and custom field values
@@ -109,15 +119,17 @@ The ClickUp MCP supports three operational modes to balance functionality, secur
 |------|:------------:|:----:|:-----:|-------------|
 | `getTaskById` | ✅ | ✅ | ✅ | Get complete task details including comments, images, and metadata |
 | `searchTasks` | ✅ | ✅ | ✅ | Find tasks by content, keywords, assignees, or project context |
-| `listSpaces` | ❌ | ✅ | ✅ | Browse workspace structure and project organization |
-| `listLists` | ❌ | ✅ | ✅ | Browse lists and folders within spaces |
+| `searchSpaces` | ❌ | ✅ | ✅ | Browse workspace structure, project organization, and documents |
 | `getListInfo` | ❌ | ✅ | ✅ | Get list details and available statuses for task creation |
 | `getTimeEntries` | ❌ | ✅ | ✅ | View time entries and analyze time spent across projects |
+| `readDocument` | ❌ | ✅ | ✅ | Get document details, page structure, and content with navigation |
+| `searchDocuments` | ❌ | ✅ | ✅ | Search documents by name and space with fuzzy matching and space filtering |
 | `createTask` | ❌ | ❌ | ✅ | Create new tasks with full markdown support |
 | `updateTask` | ❌ | ❌ | ✅ | Update tasks (status, priority, assignees, etc.) with **SAFE APPEND-ONLY** descriptions |
 | `updateListInfo` | ❌ | ❌ | ✅ | **SAFE APPEND-ONLY** updates to list descriptions (preserves existing content) |
 | `addComment` | ❌ | ❌ | ✅ | Add comments to tasks for collaboration |
 | `createTimeEntry` | ❌ | ❌ | ✅ | Log time entries for task tracking |
+| `writeDocument` | ❌ | ❌ | ✅ | Universal document and page operations with smart document creation |
 
 ### Setting the Mode
 

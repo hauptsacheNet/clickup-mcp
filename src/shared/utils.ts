@@ -219,59 +219,17 @@ export function generateSpaceUrl(spaceId: string): string {
  * Generate a ClickUp folder URL from a folder ID
  */
 export function generateFolderUrl(folderId: string): string {
-  return `https://app.clickup.com/v/f/${folderId}`;
+  return `https://app.clickup.com/${CONFIG.teamId}/v/f/${folderId}`;
 }
 
 /**
- * Format a ClickUp task link as markdown
+ * Generate a ClickUp document URL from a document ID and optional page ID
  */
-export function formatTaskLink(taskId: string, taskName?: string): string {
-  const url = generateTaskUrl(taskId);
-  const displayText = taskName ? `${taskName} (${taskId})` : taskId;
-  return `[${displayText}](${url})`;
-}
-
-/**
- * Format a ClickUp list link as markdown
- */
-export function formatListLink(listId: string, listName?: string): string {
-  const url = generateListUrl(listId);
-  const displayText = listName ? `${listName} (${listId})` : listId;
-  return `[${displayText}](${url})`;
-}
-
-/**
- * Format a ClickUp space link as markdown
- */
-export function formatSpaceLink(spaceId: string, spaceName?: string): string {
-  const url = generateSpaceUrl(spaceId);
-  const displayText = spaceName ? `${spaceName} (${spaceId})` : spaceId;
-  return `[${displayText}](${url})`;
-}
-
-/**
- * Extract task ID from a ClickUp URL
- */
-export function extractTaskIdFromUrl(url: string): string | null {
-  const match = url.match(/https?:\/\/app\.clickup\.com\/t\/([a-z0-9]{6,9})/i);
-  return match ? match[1] : null;
-}
-
-/**
- * Validate if a string is a valid ClickUp URL
- */
-export function isClickUpUrl(url: string): boolean {
-  return /^https?:\/\/app\.clickup\.com\//.test(url);
-}
-
-/**
- * Format a prominent link section for responses
- */
-export function formatLinksSection(links: { text: string; url: string }[]): string {
-  if (links.length === 0) return '';
-  
-  const linkLines = links.map(link => `🔗 [${link.text}](${link.url})`);
-  return `\n\n**📌 Quick Links:**\n${linkLines.join('\n')}`;
+export function generateDocumentUrl(docId: string, pageId?: string): string {
+  if (pageId) {
+    return `https://app.clickup.com/${CONFIG.teamId}/v/dc/${docId}/${pageId}`;
+  }
+  return `https://app.clickup.com/${CONFIG.teamId}/v/dc/${docId}`;
 }
 
 // Space search index cache - cache promise to prevent race conditions
@@ -334,9 +292,9 @@ export async function getSpaceSearchIndex(): Promise<Fuse<any> | null> {
 const listCache = new Map<string, Promise<any>>(); // Cache for space lists/folders
 
 /**
- * Get lists and folders for a specific space with caching
+ * Get lists, folders, and documents for a specific space with caching
  */
-export async function getSpaceContent(spaceId: string): Promise<{ lists: any[], folders: any[] }> {
+export async function getSpaceContent(spaceId: string): Promise<{ lists: any[], folders: any[], documents: any[] }> {
   const cacheKey = `space-content-${spaceId}`;
   
   // Check cache first
@@ -348,19 +306,35 @@ export async function getSpaceContent(spaceId: string): Promise<{ lists: any[], 
   // Fetch content with parallel requests
   const fetchPromise = (async () => {
     try {
-      const [foldersResponse, listsResponse] = await Promise.all([
+      const [folders, lists, documents] = await Promise.all([
         fetch(`https://api.clickup.com/api/v2/space/${spaceId}/folder`, {
-          headers: { Authorization: CONFIG.apiKey },
-        }),
-        fetch(`https://api.clickup.com/api/v2/space/${spaceId}/list`, {
-          headers: { Authorization: CONFIG.apiKey },
+          headers: {Authorization: CONFIG.apiKey},
         })
+          .then(response => response.json())
+          .then(json => json.folders || [])
+          .catch(e => {
+            console.error(e);
+            return []
+          }),
+        fetch(`https://api.clickup.com/api/v2/space/${spaceId}/list`, {
+          headers: {Authorization: CONFIG.apiKey},
+        })
+          .then(response => response.json())
+          .then(json => json.lists || [])
+          .catch(e => {
+            console.error(e);
+            return []
+          }),
+        fetch(`https://api.clickup.com/api/v3/workspaces/${CONFIG.teamId}/docs?parent_id=${spaceId}`, {
+          headers: {Authorization: CONFIG.apiKey},
+        })
+          .then(response => response.json())
+          .then(json => json.docs || [])
+          .catch(e => {
+            console.error(e);
+            return []
+          })
       ]);
-
-      const folders = foldersResponse.ok ? 
-        (await foldersResponse.json()).folders || [] : [];
-      const lists = listsResponse.ok ? 
-        (await listsResponse.json()).lists || [] : [];
 
       // For each folder, also fetch its lists
       const folderListPromises = folders.map(async (folder: any) => {
@@ -383,10 +357,10 @@ export async function getSpaceContent(spaceId: string): Promise<{ lists: any[], 
 
       const foldersWithLists = await Promise.all(folderListPromises);
 
-      return { lists, folders: foldersWithLists };
+      return { lists, folders: foldersWithLists, documents };
     } catch (error) {
       console.error(`Error fetching space content for ${spaceId}:`, error);
-      return { lists: [], folders: [] };
+      return { lists: [], folders: [], documents: [] };
     }
   })();
 
@@ -455,6 +429,179 @@ export async function getAllTeamMembers(): Promise<string[]> {
   }, GLOBAL_REFRESH_INTERVAL);
   
   return fetchPromise;
+}
+
+// Document search index management - cache promises to prevent race conditions
+const documentIndices: Map<string, Promise<Fuse<any>>> = new Map();
+
+/**
+ * Get or create a document search index with space name resolution
+ * Caches promises to prevent race conditions on concurrent calls
+ */
+export async function getDocumentSearchIndex(
+  space_ids?: string[]
+): Promise<Fuse<any> | null> {
+  // Create cache key from sorted filter arrays
+  const key = JSON.stringify({
+    space_ids: space_ids?.sort()
+  });
+
+  // Check for existing valid index promise
+  const cachedPromise = documentIndices.get(key);
+  if (cachedPromise) {
+    return cachedPromise;
+  }
+
+  // Create the fetch promise
+  const fetchPromise = (async (): Promise<Fuse<any>> => {
+    console.error(`Refreshing document index for filters: ${key}`);
+    const documents = await fetchDocuments(space_ids);
+    const index = createDocumentFuseIndex(documents);
+    console.error(`Document index created with ${documents.length} documents`);
+    return index;
+  })();
+
+  // Store promise with auto-cleanup
+  documentIndices.set(key, fetchPromise);
+  setTimeout(() => {
+    documentIndices.delete(key);
+    console.error(`Auto-cleaned document index for filters: ${key}`);
+  }, GLOBAL_REFRESH_INTERVAL);
+
+  return fetchPromise;
+}
+
+/**
+ * Fetch documents and resolve space names
+ */
+async function fetchDocuments(space_ids?: string[]): Promise<any[]> {
+  try {
+    // Fetch spaces first
+    const spacesResponse = await fetch(`https://api.clickup.com/api/v2/team/${CONFIG.teamId}/space`, {
+      headers: { Authorization: CONFIG.apiKey }
+    });
+
+    if (!spacesResponse.ok) {
+      console.error('Error fetching spaces:', spacesResponse.status);
+      return [];
+    }
+
+    const spacesData = await spacesResponse.json();
+
+    // Fetch documents with pagination
+    const allDocuments: any[] = [];
+    let nextCursor: string | null = null;
+    let pageCount = 0;
+    const maxPages = 10; // Limit to 10 pages to avoid excessive API calls
+
+    do {
+      const url = new URL(`https://api.clickup.com/api/v3/workspaces/${CONFIG.teamId}/docs`);
+      url.searchParams.set('limit', '100');
+      if (nextCursor) {
+        url.searchParams.set('next_cursor', nextCursor);
+      }
+
+      const documentsResponse = await fetch(url.toString(), {
+        headers: { Authorization: CONFIG.apiKey }
+      });
+
+      if (!documentsResponse.ok) {
+        console.error('Error fetching documents:', documentsResponse.status);
+        break;
+      }
+
+      const documentsData = await documentsResponse.json();
+      const pageDocs = documentsData.docs || [];
+      
+      allDocuments.push(...pageDocs);
+      nextCursor = documentsData.next_cursor || null;
+      pageCount++;
+
+      console.error(`Fetched page ${pageCount} with ${pageDocs.length} documents (total: ${allDocuments.length})`);
+
+    } while (nextCursor && pageCount < maxPages);
+
+    const documents = allDocuments;
+    const spaces = spacesData.spaces || [];
+
+    // Create space lookup map
+    const spaceMap = new Map(spaces.map((space: any) => [space.id, space]));
+
+    // Enhance documents with parent information
+    const enhancedDocuments = documents.map((doc: any) => {
+      // Parent types: 4=Space, 5=Folder, 6=List, 7=Workspace
+      if (doc.parent?.type === 4) {
+        // Space parent - we can resolve the name
+        const space = spaceMap.get(doc.parent.id) as any;
+        return {
+          ...doc,
+          space_name: space?.name || 'Unknown',
+          space_id: doc.parent.id,
+          parent_info: space?.name ? `Space: ${space.name} (${doc.parent.id})` : `Space: ${doc.parent.id}`
+        };
+      } else if (doc.parent?.type === 6) {
+        // List parent - just show ID
+        return {
+          ...doc,
+          space_name: 'N/A',
+          space_id: null,
+          parent_info: `List: ${doc.parent.id}`
+        };
+      } else if (doc.parent?.type === 5) {
+        // Folder parent - just show ID
+        return {
+          ...doc,
+          space_name: 'N/A',
+          space_id: null,
+          parent_info: `Folder: ${doc.parent.id}`
+        };
+      } else if (doc.parent?.type === 7) {
+        // Workspace parent
+        return {
+          ...doc,
+          space_name: 'N/A',
+          space_id: null,
+          parent_info: `Workspace`
+        };
+      }
+      // Unknown parent type
+      return {
+        ...doc,
+        space_name: 'Unknown',
+        space_id: doc.parent?.id,
+        parent_info: doc.parent ? `Unknown (type ${doc.parent.type})` : 'Unknown'
+      };
+    });
+
+    // Filter by space_ids if provided
+    if (space_ids?.length) {
+      return enhancedDocuments.filter((doc: any) => 
+        space_ids.includes(doc.space_id)
+      );
+    }
+
+    return enhancedDocuments;
+  } catch (error) {
+    console.error('Error fetching documents:', error);
+    return [];
+  }
+}
+
+/**
+ * Create a Fuse index from documents array
+ */
+function createDocumentFuseIndex(documents: any[]): Fuse<any> {
+  return new Fuse(documents, {
+    keys: [
+      { name: 'name', weight: 0.8 },
+      { name: 'space_name', weight: 0.6 },
+      { name: 'id', weight: 0.4 }
+    ],
+    findAllMatches: true,
+    includeScore: true,
+    minMatchCharLength: 2,
+    threshold: 0.4,
+  });
 }
 
 /**

@@ -1,8 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { CONFIG } from "../shared/config";
-import { ContentBlock } from "../shared/types";
-import { generateListUrl, generateSpaceUrl, generateFolderUrl, formatListLink, formatSpaceLink } from "../shared/utils";
+import { generateListUrl, generateSpaceUrl } from "../shared/utils";
 
 export function registerListToolsRead(server: McpServer) {
   server.tool(

@@ -3,7 +3,7 @@
   "name": "@hauptsache.net/clickup-mcp",
   "display_name": "ClickUp",
   "version": "1.2.0",
-  "description": "Search, create, and retrieve tasks, add comments, and track time through natural language commands.",
+  "description": "Search, create, and retrieve tasks and documents, add comments, and track time through natural language commands.",
   "author": {
     "name": "Marco Pfeiffer",
     "email": "marco@hauptsache.net",
@@ -48,7 +48,7 @@
     },
     {
       "name": "searchSpaces",
-      "description": "Search spaces (projects) by name or ID with fuzzy matching. Automatically fetches complete tree structure with lists and folders for 5 or fewer matches."
+      "description": "Search spaces (projects) by name or ID with fuzzy matching. Automatically fetches complete tree structure with lists, folders, and documents for 5 or fewer matches."
     },
     {
       "name": "getListInfo",
@@ -65,6 +65,18 @@
     {
       "name": "createTimeEntry",
       "description": "Create a time entry (book time) on a task for the current user using decimal hours format with optional description and start time."
+    },
+    {
+      "name": "readDocument",
+      "description": "Get a ClickUp document with page structure and content. Supports reading specific pages and provides complete document metadata with navigation."
+    },
+    {
+      "name": "searchDocuments",
+      "description": "Search documents by name and space with fuzzy matching and support for multiple search terms (OR logic). Can filter by specific space_ids and provides document overview with space context."
+    },
+    {
+      "name": "writeDocument",
+      "description": "Universal tool for document and page operations with smart document creation. Create new documents, pages, sub-pages, or update existing pages with append mode support for adding content without overwriting."
     }
   ],
   "user_config": {
@@ -103,6 +115,7 @@
     "llm",
     "ai",
     "ticket",
+    "documents",
     "time-tracking",
     "productivity",
     "project-management",

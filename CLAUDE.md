@@ -7,3 +7,4 @@
 - Use console.error to prevent writing log messages to stdout.
 - DXT manifest.json spec is at https://github.com/anthropics/dxt/blob/main/README.md - update tools section when adding new MCP tools.
 - Backwards compatibility does not matter, an LLM will understand new parameters.
+- Mention ID's, not just names, when outputting references. for example "User: Username (user_id: 12345)"
