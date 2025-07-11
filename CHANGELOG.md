@@ -7,8 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2025-07-11
+
+### Added
+- Document management tools for ClickUp Docs
+  - `readDocument` - Read documents with page structure and content
+  - `searchDocuments` - Search documents by name and space with fuzzy matching
+  - `writeDocument` - Create and update documents and pages with smart parent detection
+- Added Server instructions with all ClickUp Spaces to help the LLM make better decisions.
+
+### Fixed
+- Null attachment handling in task metadata
+- URL generation for lists and spaces
+
 ### Improved
 - Enhanced search relevance weighting for multi-term queries
+- Optimized search scoring with multiple term matches
 
 ## [1.2.0] - 2025-07-02
 

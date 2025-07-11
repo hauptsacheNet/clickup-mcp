@@ -2,7 +2,7 @@
   "dxt_version": "0.1",
   "name": "@hauptsache.net/clickup-mcp",
   "display_name": "ClickUp",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Search, create, and retrieve tasks and documents, add comments, and track time through natural language commands.",
   "author": {
     "name": "Marco Pfeiffer",
