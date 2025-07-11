@@ -118,17 +118,17 @@ The ClickUp MCP supports three operational modes to balance functionality, secur
 | Tool | read-minimal | read | write | Description |
 |------|:------------:|:----:|:-----:|-------------|
 | `getTaskById` | ✅ | ✅ | ✅ | Get complete task details including comments, images, and metadata |
+| `addComment` | ❌ | ❌ | ✅ | Add comments to tasks for collaboration |
+| `updateTask` | ❌ | ❌ | ✅ | Update tasks (status, priority, assignees, etc.) with **SAFE APPEND-ONLY** descriptions |
+| `createTask` | ❌ | ❌ | ✅ | Create new tasks with full markdown support |
 | `searchTasks` | ✅ | ✅ | ✅ | Find tasks by content, keywords, assignees, or project context |
 | `searchSpaces` | ❌ | ✅ | ✅ | Browse workspace structure, project organization, and documents |
 | `getListInfo` | ❌ | ✅ | ✅ | Get list details and available statuses for task creation |
+| `updateListInfo` | ❌ | ❌ | ✅ | **SAFE APPEND-ONLY** updates to list descriptions (preserves existing content) |
 | `getTimeEntries` | ❌ | ✅ | ✅ | View time entries and analyze time spent across projects |
+| `createTimeEntry` | ❌ | ❌ | ✅ | Log time entries for task tracking |
 | `readDocument` | ❌ | ✅ | ✅ | Get document details, page structure, and content with navigation |
 | `searchDocuments` | ❌ | ✅ | ✅ | Search documents by name and space with fuzzy matching and space filtering |
-| `createTask` | ❌ | ❌ | ✅ | Create new tasks with full markdown support |
-| `updateTask` | ❌ | ❌ | ✅ | Update tasks (status, priority, assignees, etc.) with **SAFE APPEND-ONLY** descriptions |
-| `updateListInfo` | ❌ | ❌ | ✅ | **SAFE APPEND-ONLY** updates to list descriptions (preserves existing content) |
-| `addComment` | ❌ | ❌ | ✅ | Add comments to tasks for collaboration |
-| `createTimeEntry` | ❌ | ❌ | ✅ | Log time entries for task tracking |
 | `writeDocument` | ❌ | ❌ | ✅ | Universal document and page operations with smart document creation |
 
 ### Setting the Mode
@@ -140,7 +140,7 @@ Add the mode to your MCP configuration:
   "mcpServers": {
     "clickup": {
       "command": "npx",
-      "args": ["-y", "@hauptsache.net/clickup-mcp@1"],
+      "args": ["-y", "@hauptsache.net/clickup-mcp@latest"],
       "env": {
         "CLICKUP_API_KEY": "your_api_key",
         "CLICKUP_TEAM_ID": "your_team_id",

@@ -31,10 +31,6 @@
       "description": "Get a ClickUp task with images and comments by ID. Always use this URL when referencing tasks in conversations or sharing with others."
     },
     {
-      "name": "searchTasks",
-      "description": "Search tasks by name, content, assignees, and ID with fuzzy matching and support for multiple search terms (OR logic). Can filter by list_ids, space_ids, todo status, or tasks assigned to current user."
-    },
-    {
       "name": "addComment",
       "description": "Add a comment to a specific task with linking best practices and progress updates."
     },
@@ -45,6 +41,10 @@
     {
       "name": "createTask",
       "description": "Create a new task in a specific list with full markdown support, assignment to users, and automatic linking to related tasks."
+    },
+    {
+      "name": "searchTasks",
+      "description": "Search tasks by name, content, assignees, and ID with fuzzy matching and support for multiple search terms (OR logic). Can filter by list_ids, space_ids, todo status, or tasks assigned to current user."
     },
     {
       "name": "searchSpaces",
