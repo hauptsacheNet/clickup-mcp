@@ -51,6 +51,53 @@ async function initializeServer() {
     instructions
   });
 
+  // Register prompts
+  const lang = CONFIG.primaryLanguageHint === 'de' ? 'de' : 'en';
+  
+  // Register "my-todos" prompt
+  server.registerPrompt(
+    "my-todos",
+    {
+      title: lang === 'de' ? "Meine TODOs" : "My TODOs",
+      description: lang === 'de' 
+        ? "Meine aktuellen TODO-Aufgaben aus ClickUp abrufen und nach Priorität kategorisiert analysieren"
+        : "Get and analyze my current TODO tasks from ClickUp, categorized by priority",
+      argsSchema: {}
+    },
+    () => {
+      const messages = [{
+        role: "user" as const,
+        content: {
+          type: "text" as const,
+          text: lang === 'de' 
+            ? `Kannst du in ClickUp nachsehen, was meine aktuellen TODOs sind? Bitte suche nach allen offenen Aufgaben, die mir zugewiesen sind, analysiere deren Inhalt und kategorisiere sie nach erkennbarer Priorität (dringend, hoch, normal, niedrig). Für jede Kategorie gib eine kurze Zusammenfassung dessen, was getan werden muss und hebe Fälligkeitstermine oder wichtige Details aus den Aufgabenbeschreibungen hervor.
+
+Bitte strukturiere deine Antwort mit:
+1. **Zusammenfassung**: Gesamtanzahl der Aufgaben und allgemeine Prioritätsverteilung
+2. **Dringende Aufgaben**: Aufgaben, die sofortige Aufmerksamkeit benötigen (heute fällig, überfällig oder als dringend markiert)
+3. **Hohe Priorität**: Wichtige Aufgaben, die bald erledigt werden sollten
+4. **Normale Priorität**: Regelmäßige Aufgaben, die später geplant werden können
+5. **Niedrige Priorität**: Aufgaben, die erledigt werden können, wenn Zeit vorhanden ist
+6. **Empfehlungen**: Vorgeschlagene Maßnahmen oder Prioritäten für den kommenden Zeitraum
+
+Verwende die ClickUp-Suchtools, um mir zugewiesene Aufgaben zu finden, und hole detaillierte Informationen über die wichtigsten mit getTaskById.`
+            : `Can you look into ClickUp and check what my current TODO's are? Please search for all open tasks assigned to me, analyze their content, and categorize them by apparent priority (urgent, high, normal, low). For each category, provide a brief summary of what needs to be done and highlight any due dates or important details from the task descriptions.
+
+Please structure your response with:
+1. **Summary**: Total number of tasks and overall priority distribution
+2. **Urgent Tasks**: Tasks that need immediate attention (due today, overdue, or marked as urgent)
+3. **High Priority**: Important tasks that should be addressed soon
+4. **Normal Priority**: Regular tasks that can be scheduled for later
+5. **Low Priority**: Tasks that can be done when time permits
+6. **Recommendations**: Suggested actions or priorities for the upcoming period
+
+Use the ClickUp search tools to find tasks assigned to me, and get detailed information about the most important ones using getTaskById.`
+        }
+      }];
+      return { messages };
+    }
+  );
+
   if (CONFIG.mode === 'read-minimal') {
     // Core task context tools for AI coding assistance
     // Only getTaskById and searchTasks

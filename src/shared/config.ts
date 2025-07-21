@@ -1,13 +1,50 @@
 export const rawPrimaryLang = process.env.CLICKUP_PRIMARY_LANGUAGE || process.env.LANG;
 let detectedLanguageHint: string | undefined = undefined;
 
-if (rawPrimaryLang) {
-  // Extract the primary language part (e.g., 'en' from 'en_US.UTF-8' or 'en-GB')
-  // and convert to lowercase.
-  const langPart = rawPrimaryLang.match(/^[a-zA-Z]{2,3}/);
-  if (langPart) {
-    detectedLanguageHint = langPart[0].toLowerCase();
+/**
+ * Enhanced language detection that handles various formats and common language names
+ */
+function detectLanguage(rawLang: string): string | undefined {
+  if (!rawLang) return undefined;
+  
+  const normalizedLang = rawLang.toLowerCase().trim();
+  
+  // German language detection
+  if (normalizedLang === 'de' || normalizedLang === 'german' || normalizedLang === 'deutsch' || normalizedLang.startsWith('de_') || normalizedLang.startsWith('de-')) {
+    return 'de';
   }
+  
+  // English language detection
+  if (normalizedLang === 'en' || normalizedLang === 'english' || normalizedLang.startsWith('en_') || normalizedLang.startsWith('en-')) {
+    return 'en';
+  }
+  
+  // French language detection
+  if (normalizedLang === 'fr' || normalizedLang === 'french' || normalizedLang === 'français' || normalizedLang.startsWith('fr_') || normalizedLang.startsWith('fr-')) {
+    return 'fr';
+  }
+  
+  // Spanish language detection
+  if (normalizedLang === 'es' || normalizedLang === 'spanish' || normalizedLang === 'español' || normalizedLang.startsWith('es_') || normalizedLang.startsWith('es-')) {
+    return 'es';
+  }
+  
+  // Italian language detection
+  if (normalizedLang === 'it' || normalizedLang === 'italian' || normalizedLang === 'italiano' || normalizedLang.startsWith('it_') || normalizedLang.startsWith('it-')) {
+    return 'it';
+  }
+  
+  // Fallback: extract the primary language part (e.g., 'en' from 'en_US.UTF-8' or 'en-GB')
+  const langPart = normalizedLang.match(/^[a-zA-Z]{2,3}/);
+  if (langPart) {
+    return langPart[0].toLowerCase();
+  }
+  
+  return undefined;
+}
+
+if (rawPrimaryLang) {
+  detectedLanguageHint = detectLanguage(rawPrimaryLang);
 }
 
 // MCP Mode configuration
