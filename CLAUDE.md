@@ -6,5 +6,6 @@
 - Use "npm run cli" to test mcp calls.
 - Use console.error to prevent writing log messages to stdout.
 - DXT manifest.json spec is at https://github.com/anthropics/dxt/blob/main/README.md - update tools section when adding new MCP tools.
+- Update the CHANGELOG.md when changing or implementing a new feature.
 - Backwards compatibility does not matter, an LLM will understand new parameters.
 - Mention ID's, not just names, when outputting references. for example "User: Username (user_id: 12345)"

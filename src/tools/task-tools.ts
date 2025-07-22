@@ -28,6 +28,9 @@ export function registerTaskToolsRead(server: McpServer, userData: any) {
           `The 6-9 character ID of the task to get without a prefix like "#", "CU-" or "https://app.clickup.com/t/"`
         ),
     },
+    {
+      readOnlyHint: true
+    },
     async ({ id }) => {
       // 1. Load base task content, comment events, and status change events in parallel
       const [taskDetailContentBlocks, commentEvents, statusChangeEvents] = await Promise.all([

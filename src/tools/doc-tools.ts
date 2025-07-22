@@ -69,6 +69,9 @@ export function registerDocumentToolsRead(server: McpServer) {
         .optional()
         .describe("Optional specific page ID or name to read (defaults to first page)")
     },
+    {
+      readOnlyHint: true
+    },
     async ({ doc_id, page }) => {
       try {
         // First get the document details and page structure
@@ -228,6 +231,9 @@ export function registerDocumentToolsRead(server: McpServer) {
         .optional()
         .describe("Filter documents to specific space IDs")
     },
+    {
+      readOnlyHint: true
+    },
     async ({ terms, space_ids }) => {
       try {
         // Get the document search index
@@ -361,6 +367,9 @@ export function registerDocumentToolsWrite(server: McpServer) {
         .boolean()
         .optional()
         .describe("Whether to append content to existing page content (default: false - replaces content)")
+    },
+    {
+      readOnlyHint: false
     },
     async ({ page_id, parent_type, parent_id, page_name, content, append = false }) => {
       try {

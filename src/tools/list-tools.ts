@@ -16,6 +16,9 @@ export function registerListToolsRead(server: McpServer) {
     {
       list_id: z.string().min(1).describe("The list ID to get information for")
     },
+    {
+      readOnlyHint: true
+    },
     async ({ list_id }) => {
       try {
         // Get list details including statuses (try to get markdown content)
@@ -130,6 +133,9 @@ export function registerListToolsWrite(server: McpServer) {
     {
       list_id: z.string().min(1).describe("The list ID to update"),
       append_description: z.string().min(1).describe("Markdown content to APPEND to existing list description (preserves existing content for safety)")
+    },
+    {
+      readOnlyHint: false
     },
     async ({ list_id, append_description }) => {
       try {

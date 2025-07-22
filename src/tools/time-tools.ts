@@ -68,6 +68,9 @@ export function registerTimeToolsRead(server: McpServer) {
       space_id: z.string().optional().describe("Optional single space ID to filter time entries by a specific space"),
       include_all_users: z.boolean().optional().describe("Optional flag to include time entries from all team members (default: false, only current user)")
     },
+    {
+      readOnlyHint: true
+    },
     async ({ task_id, start_date, end_date, list_id, space_id, include_all_users }) => {
       try {
         // Build query parameters
@@ -331,6 +334,9 @@ export function registerTimeToolsWrite(server: McpServer) {
       hours: z.number().min(0.01).max(24).describe("Hours to book (decimal format, e.g., 0.25 = 15min, 1.5 = 1h 30min)"),
       description: z.string().optional().describe("Optional description for the time entry"),
       start_time: z.string().optional().describe("Optional start time as ISO date string (e.g., '2024-10-06T09:00:00+02:00', defaults to current time)")
+    },
+    {
+      readOnlyHint: false
     },
     async ({ task_id, hours, description, start_time }) => {
       try {

@@ -37,6 +37,9 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
       task_id: z.string().min(6).max(9).describe("The 6-9 character task ID to comment on"),
       comment: z.string().min(1).describe("The comment text to add to the task"),
     },
+    {
+      readOnlyHint: false
+    },
     async ({ task_id, comment }) => {
       try {
         const requestBody = {
@@ -124,6 +127,9 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
       tags: taskTagsSchema.describe("Optional array of tag names (will replace existing tags)"),
       parent_task_id: z.string().optional().describe("Optional parent task ID to change parent/child relationships"),
       assignees: z.array(z.string()).optional().describe(createAssigneeDescription(userData))
+    },
+    {
+      readOnlyHint: false
     },
     async ({ task_id, name, append_description, status, priority, due_date, start_date, time_estimate, tags, parent_task_id, assignees }) => {
       try {
@@ -254,6 +260,9 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
       tags: taskTagsSchema,
       parent_task_id: z.string().optional().describe("Optional parent task ID to create this as a subtask"),
       assignees: z.array(z.string()).optional().describe(createAssigneeDescription(userData))
+    },
+    {
+      readOnlyHint: false
     },
     async ({ list_id, name, description, status, priority, due_date, start_date, time_estimate, tags, parent_task_id, assignees }) => {
       try {

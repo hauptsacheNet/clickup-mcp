@@ -54,6 +54,9 @@ export function registerSearchTools(server: McpServer, userData: any) {
         .optional()
         .describe(`Filter for tasks assigned to the current user (${userData.user.username} (${userData.user.id}))`),
     },
+    {
+      readOnlyHint: true
+    },
     async ({terms, list_ids, space_ids, only_todo, status, assigned_to_me}) => {
       // Get current user ID if filtering by assigned_to_me
       const assignees = assigned_to_me ? [userData.user.id as string] : [];
@@ -189,7 +192,8 @@ export function registerSearchTools(server: McpServer, userData: any) {
       return {
         content: await Promise.all(resultTasks.map((task: any) => generateTaskMetadata(task, timeEntries))),
       };
-    });
+    }
+  );
 }
 
 /**

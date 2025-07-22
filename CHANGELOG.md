@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Add `readOnlyHint` annotations to all MCP tools to improve user experience
+- Add a prompt for "my-todos" in English and German, as a shortcut.
+
 ## [1.3.0] - 2025-07-11
 
 ### Added

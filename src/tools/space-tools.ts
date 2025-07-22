@@ -20,6 +20,9 @@ export function registerSpaceTools(server: McpServer) {
         .describe("Array of search terms to match against space names or IDs. If not provided, returns all spaces."),
       archived: z.boolean().optional().describe("Include archived spaces (default: false)")
     },
+    {
+      readOnlyHint: true
+    },
     async ({ terms, archived = false }) => {
       try {
         const searchIndex = await getSpaceSearchIndex();
