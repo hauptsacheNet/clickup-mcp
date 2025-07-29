@@ -100,14 +100,6 @@
       "required": false
     }
   },
-  "platforms": ["darwin", "linux", "win32"],
-  "capabilities": {
-    "tools": true,
-    "resources": false,
-    "prompts": true,
-    "sampling": false
-  },
-  "categories": ["productivity", "project-management", "development", "time-tracking"],
   "keywords": [
     "clickup",
     "mcp",
