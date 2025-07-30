@@ -512,7 +512,7 @@ export function registerDocumentToolsWrite(server: McpServer) {
           }
 
           const data = await response.json();
-          const newPage = data.page;
+          const newPage = data.page || data; // Handle both nested and flat response formats
 
           return {
             content: [{ 
@@ -545,7 +545,7 @@ export function registerDocumentToolsWrite(server: McpServer) {
           }
 
           const data = await response.json();
-          const newPage = data.page;
+          const newPage = data.page || data; // Handle both nested and flat response formats
 
           return {
             content: [{ 
