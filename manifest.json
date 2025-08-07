@@ -115,7 +115,7 @@
     "agentic-coding",
     "automation"
   ],
-  "license": "ISC",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/hauptsacheNet/clickup-mcp.git"
