@@ -13,6 +13,7 @@ import { registerSpaceTools } from "./tools/space-tools";
 import { registerListToolsRead, registerListToolsWrite } from "./tools/list-tools";
 import { registerTimeToolsRead, registerTimeToolsWrite } from "./tools/time-tools";
 import { registerDocumentToolsRead, registerDocumentToolsWrite } from "./tools/doc-tools";
+import { registerSpaceResources } from "./resources/space-resources";
 
 // Create server variable that will be initialized later
 let server: McpServer;
@@ -108,6 +109,7 @@ Use the ClickUp search tools to find tasks assigned to me, and get detailed info
     registerTaskToolsRead(server, userData);
     registerSearchTools(server, userData);
     registerSpaceTools(server);
+    registerSpaceResources(server);
     registerListToolsRead(server);
     registerTimeToolsRead(server);
     registerDocumentToolsRead(server);
@@ -117,6 +119,7 @@ Use the ClickUp search tools to find tasks assigned to me, and get detailed info
     registerTaskToolsWrite(server, userData);
     registerSearchTools(server, userData);
     registerSpaceTools(server);
+    registerSpaceResources(server);
     registerListToolsRead(server);
     registerListToolsWrite(server);
     registerTimeToolsRead(server);
@@ -124,6 +127,7 @@ Use the ClickUp search tools to find tasks assigned to me, and get detailed info
     registerDocumentToolsRead(server);
     registerDocumentToolsWrite(server);
   }
+
 
   return server;
 }

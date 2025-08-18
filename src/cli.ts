@@ -14,10 +14,83 @@ async function main() {
     console.log((server.server as any)._instructions || "No instructions configured");
     process.exit(0);
   }
+
+  // Special commands for testing resources
+  if (args.length === 1 && args[0] === 'resources') {
+    console.log("Listing available resources...");
+    try {
+      // @ts-ignore - Accessing private property for testing purposes
+      const resourceTemplates = server._registeredResourceTemplates;
+      
+      if (resourceTemplates && Object.keys(resourceTemplates).length > 0) {
+        for (const [name, template] of Object.entries(resourceTemplates)) {
+          console.log(`Resource template: ${name}`);
+          // @ts-ignore - Access template properties
+          const uriTemplate = template.resourceTemplate.uriTemplate;
+          console.log(`  URI Template: ${uriTemplate}`);
+          
+          // Test the list callback if available
+          // @ts-ignore - Access template properties
+          if (template.resourceTemplate._callbacks.list) {
+            try {
+              // @ts-ignore - Call list callback
+              const result = await template.resourceTemplate._callbacks.list();
+              console.log(`  Resources found: ${result.resources.length}`);
+              result.resources.slice(0, 3).forEach((res: any, idx: number) => {
+                console.log(`    ${idx + 1}. ${res.name} (${res.uri})`);
+              });
+              if (result.resources.length > 3) {
+                console.log(`    ... and ${result.resources.length - 3} more`);
+              }
+            } catch (error) {
+              console.log(`  Error listing resources: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            }
+          }
+          console.log("");
+        }
+      } else {
+        console.log("No resource templates registered.");
+      }
+    } catch (error) {
+      console.error("Error accessing resources:", error instanceof Error ? error.message : 'Unknown error');
+    }
+    process.exit(0);
+  }
+
+  // Special command to read a specific resource
+  if (args.length === 2 && args[0] === 'resource') {
+    const resourceUri = args[1];
+    console.log(`Reading resource: ${resourceUri}`);
+    try {
+      // @ts-ignore - Accessing private property for testing purposes
+      const resourceTemplates = server._registeredResourceTemplates;
+      
+      // Find matching template and call read callback
+      for (const [name, template] of Object.entries(resourceTemplates)) {
+        try {
+          // @ts-ignore - Access template properties
+          const result = await template.readCallback(new URL(resourceUri), {}, {} as any);
+          console.dir(result, { depth: null });
+          process.exit(0);
+        } catch (error) {
+          // Continue to next template if this one doesn't match
+          continue;
+        }
+      }
+      
+      console.error("No matching resource template found for URI:", resourceUri);
+      process.exit(1);
+    } catch (error) {
+      console.error("Error reading resource:", error instanceof Error ? error.message : 'Unknown error');
+      process.exit(1);
+    }
+  }
   
   if (args.length < 1) {
     console.error("Usage: npm run cli <tool-name> [param1=value1 param2=value2 ...]");
     console.error("       npm run cli instructions");
+    console.error("       npm run cli resources");
+    console.error("       npm run cli resource <uri>");
     console.error("\nAvailable tools:");
     
     // @ts-ignore - Accessing private property for testing purposes

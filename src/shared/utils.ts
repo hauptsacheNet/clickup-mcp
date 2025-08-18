@@ -232,6 +232,88 @@ export function generateDocumentUrl(docId: string, pageId?: string): string {
   return `https://app.clickup.com/${CONFIG.teamId}/v/dc/${docId}`;
 }
 
+/**
+ * Format space content as tree structure
+ * Shared function used by both searchSpaces tool and space resources
+ */
+export function formatSpaceTree(space: any, lists: any[], folders: any[], documents: any[]): string {
+  const spaceLines: string[] = [];
+  const totalLists = lists.length + folders.reduce((sum, f) => sum + (f.lists?.length || 0), 0);
+
+  // Space header
+  spaceLines.push(
+    `🏢 SPACE: ${space.name} (space_id: ${space.id}${space.private ? ', private' : ''}${space.archived ? ', archived' : ''}) ${generateSpaceUrl(space.id)}`,
+    `   ${totalLists} lists, ${folders.length} folders, ${documents.length} documents`
+  );
+
+  // Create a tree structure
+  const hasDirectLists = lists.length > 0;
+  const hasFolders = folders.length > 0;
+  const hasDocuments = documents.length > 0;
+
+  // Direct lists (not in folders)
+  if (hasDirectLists) {
+    lists.forEach((list: any, listIndex) => {
+      const isLastDirectList = listIndex === lists.length - 1;
+      const isLastOverall = !hasFolders && !hasDocuments && isLastDirectList;
+      const treeChar = isLastOverall ? '└──' : '├──';
+      const extraInfo = [
+        ...(list.task_count ? [`${list.task_count} tasks`] : []),
+        ...(list.private ? ['private'] : []),
+        ...(list.archived ? ['archived'] : [])
+      ].join(', ');
+      const listLine = `${treeChar} 📝 ${list.name} (list_id: ${list.id}${extraInfo ? `, ${extraInfo}` : ''}) ${generateListUrl(list.id)}`;
+      spaceLines.push(listLine);
+    });
+  }
+
+  // Folders and their lists
+  if (hasFolders) {
+    folders.forEach((folder: any, folderIndex) => {
+      const isLastFolder = folderIndex === folders.length - 1;
+      const isLastOverall = !hasDocuments && isLastFolder;
+      const folderTreeChar = isLastOverall ? '└──' : '├──';
+      const folderContinuation = isLastOverall ? '   ' : '│  ';
+      
+      const folderExtraInfo = [
+        ...(folder.lists?.length ? [`${folder.lists.length} lists`] : []),
+        ...(folder.private ? ['private'] : []),
+        ...(folder.archived ? ['archived'] : [])
+      ].join(', ');
+      
+      const folderLine = `${folderTreeChar} 📂 ${folder.name} (folder_id: ${folder.id}${folderExtraInfo ? `, ${folderExtraInfo}` : ''}) ${generateFolderUrl(folder.id)}`;
+      spaceLines.push(folderLine);
+
+      // Lists within this folder
+      if (folder.lists && folder.lists.length > 0) {
+        folder.lists.forEach((list: any, listIndex: number) => {
+          const isLastListInFolder = listIndex === folder.lists.length - 1;
+          const listTreeChar = isLastListInFolder ? '└──' : '├──';
+          const listExtraInfo = [
+            ...(list.task_count ? [`${list.task_count} tasks`] : []),
+            ...(list.private ? ['private'] : []),
+            ...(list.archived ? ['archived'] : [])
+          ].join(', ');
+          const listLine = `${folderContinuation}${listTreeChar} 📝 ${list.name} (list_id: ${list.id}${listExtraInfo ? `, ${listExtraInfo}` : ''}) ${generateListUrl(list.id)}`;
+          spaceLines.push(listLine);
+        });
+      }
+    });
+  }
+
+  // Documents attached to this space
+  if (hasDocuments) {
+    documents.forEach((document: any, docIndex) => {
+      const isLastDocument = docIndex === documents.length - 1;
+      const docTreeChar = isLastDocument ? '└──' : '├──';
+      const docLine = `${docTreeChar} 📄 ${document.name} (doc_id: ${document.id}) ${generateDocumentUrl(document.id)}`;
+      spaceLines.push(docLine);
+    });
+  }
+
+  return spaceLines.join('\n');
+}
+
 // Space search index cache - cache promise to prevent race conditions
 let spaceSearchIndexPromise: Promise<Fuse<any> | null> | null = null;
 
