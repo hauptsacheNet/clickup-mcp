@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Task dependency and relationship management in `updateTask` tool
+  - Support for managing waiting_on dependencies (tasks that must complete before this task can start)
+  - Support for managing blocking dependencies (makes other tasks wait on this task via reverse dependency creation)
+  - Support for managing linked tasks (simple bidirectional relationships without blocking semantics)
+  - Dependencies are bidirectional - setting "waiting_on" automatically creates "blocking" relationship on the other task
+  - Follows same pattern as tag management with dedicated API calls for each relationship change
+  - Automatically calculates which relationships to add or remove based on current state
+  - Note: Due to ClickUp API limitations, dependency removal uses query parameters format
+
 ### Fixed
 - Fixed tag management in `updateTask` - tags are now properly added/removed using dedicated API endpoints
   - The ClickUp API doesn't support updating tags via the general update endpoint
