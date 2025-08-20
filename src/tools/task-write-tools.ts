@@ -146,6 +146,55 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
 
         const taskData = await taskResponse.json();
 
+        // Handle tags separately since they need individual API calls
+        let tagUpdateResults: string[] = [];
+        if (tags !== undefined) {
+          // Get current tags
+          const currentTags = taskData.tags?.map((t: any) => t.name) || [];
+          const tagsToAdd = tags.filter(tag => !currentTags.includes(tag));
+          const tagsToRemove = currentTags.filter((tag: string) => !tags.includes(tag));
+
+          // Add new tags
+          for (const tagName of tagsToAdd) {
+            try {
+              const addTagResponse = await fetch(
+                `https://api.clickup.com/api/v2/task/${task_id}/tag/${encodeURIComponent(tagName)}`,
+                {
+                  method: 'POST',
+                  headers: { Authorization: CONFIG.apiKey }
+                }
+              );
+              if (!addTagResponse.ok) {
+                console.error(`Failed to add tag "${tagName}": ${addTagResponse.status}`);
+                tagUpdateResults.push(`Failed to add tag: ${tagName}`);
+              }
+            } catch (error) {
+              console.error(`Error adding tag "${tagName}":`, error);
+              tagUpdateResults.push(`Error adding tag: ${tagName}`);
+            }
+          }
+
+          // Remove old tags
+          for (const tagName of tagsToRemove) {
+            try {
+              const removeTagResponse = await fetch(
+                `https://api.clickup.com/api/v2/task/${task_id}/tag/${encodeURIComponent(tagName)}`,
+                {
+                  method: 'DELETE',
+                  headers: { Authorization: CONFIG.apiKey }
+                }
+              );
+              if (!removeTagResponse.ok) {
+                console.error(`Failed to remove tag "${tagName}": ${removeTagResponse.status}`);
+                tagUpdateResults.push(`Failed to remove tag: ${tagName}`);
+              }
+            } catch (error) {
+              console.error(`Error removing tag "${tagName}":`, error);
+              tagUpdateResults.push(`Error removing tag: ${tagName}`);
+            }
+          }
+        }
+
         // Handle append-only description update with markdown support
         let finalDescription: string | undefined;
         if (append_description) {
@@ -155,9 +204,9 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
           finalDescription = currentDescription + separator + `**Edit (${timestamp}):** ${append_description}`;
         }
 
-        // Build update body using shared utility (without description since we handle it separately)
+        // Build update body without tags (they're handled separately)
         const updateBody = buildTaskRequestBody({
-          name, status, priority, due_date, start_date, time_estimate, tags, parent_task_id, assignees
+          name, status, priority, due_date, start_date, time_estimate, parent_task_id, assignees
         });
 
         // Add markdown description if we have content to append
@@ -170,8 +219,8 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
           updateBody.assignees = { add: assignees, rem: [] }; // Add new assignees, remove none
         }
 
-        // Check if there's anything to update
-        if (Object.keys(updateBody).length === 0) {
+        // Check if there's anything to update (including tags which were handled separately)
+        if (Object.keys(updateBody).length === 0 && tags === undefined) {
           return {
             content: [
               {
@@ -182,26 +231,44 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
           };
         }
 
-        // Update the task
-        const updateResponse = await fetch(`https://api.clickup.com/api/v2/task/${task_id}`, {
-          method: 'PUT',
-          headers: {
-            Authorization: CONFIG.apiKey,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(updateBody)
-        });
+        // Update the task (if there are non-tag updates)
+        let updatedTask = taskData;
+        if (Object.keys(updateBody).length > 0) {
+          const updateResponse = await fetch(`https://api.clickup.com/api/v2/task/${task_id}`, {
+            method: 'PUT',
+            headers: {
+              Authorization: CONFIG.apiKey,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(updateBody)
+          });
 
-        if (!updateResponse.ok) {
-          const errorData = await updateResponse.json().catch(() => ({}));
-          throw new Error(`Error updating task: ${updateResponse.status} ${updateResponse.statusText} - ${JSON.stringify(errorData)}`);
+          if (!updateResponse.ok) {
+            const errorData = await updateResponse.json().catch(() => ({}));
+            throw new Error(`Error updating task: ${updateResponse.status} ${updateResponse.statusText} - ${JSON.stringify(errorData)}`);
+          }
+
+          updatedTask = await updateResponse.json();
         }
 
-        const updatedTask = await updateResponse.json();
+        // If only tags were updated, fetch the task again to get the updated state
+        if (tags !== undefined && Object.keys(updateBody).length === 0) {
+          const refreshResponse = await fetch(`https://api.clickup.com/api/v2/task/${task_id}`, {
+            headers: { Authorization: CONFIG.apiKey },
+          });
+          if (refreshResponse.ok) {
+            updatedTask = await refreshResponse.json();
+          }
+        }
 
         const responseLines = formatTaskResponse(updatedTask, 'updated', {
           name, append_description, status, priority, due_date, start_date, time_estimate, tags, parent_task_id, assignees
         }, userData);
+
+        // Add tag update results if any
+        if (tagUpdateResults.length > 0) {
+          responseLines.push('tag_warnings: ' + tagUpdateResults.join('; '));
+        }
 
         return {
           content: [
@@ -410,9 +477,8 @@ function buildTaskRequestBody(params: {
     requestBody.time_estimate = Math.round(params.time_estimate * 60 * 60 * 1000);
   }
 
-  if (params.tags !== undefined && params.tags.length > 0) {
-    requestBody.tags = params.tags;
-  }
+  // Tags are handled separately via dedicated API endpoints
+  // Do not include in the update request body
 
   if (params.assignees !== undefined) {
     requestBody.assignees = params.assignees;
