@@ -97,10 +97,15 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
     "updateTask",
     (() => {
       const descriptionBase = [
-        "Updates various aspects of an existing task.",
+        "Updates various aspects of an existing task including dependencies and relationships.",
         "ALWAYS include the task URL (https://app.clickup.com/t/TASK_ID) when updating or referencing tasks.",
         "Use getListInfo first to see valid status options.",
         "SAFETY FEATURE: Description updates are APPEND-ONLY to prevent data loss - existing content is preserved.",
+        "DEPENDENCY MANAGEMENT: Set waiting_on, blocking, and linked_tasks arrays to manage task relationships.",
+        "- waiting_on: Tasks that must complete before this task can start (reliable)",
+        "- blocking: Makes specified tasks wait on this task (implementation note: creates reverse dependencies)",
+        "- linked_tasks: Related tasks without blocking relationships (simple bidirectional links)",
+        "Note: Dependencies are bidirectional - setting 'waiting_on' from A to B automatically shows B as 'blocking' A",
         "STATUS UPDATES: Use the `addComment` tool for progress reports, work logs, and status updates rather than the task description.",
         "Task descriptions should contain requirements, specifications, and core task information.",
         "LINKING IN DESCRIPTIONS: When appending descriptions, include links to related tasks, lists, or external resources.",
@@ -126,12 +131,15 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
       time_estimate: taskTimeEstimateSchema,
       tags: taskTagsSchema.describe("Optional array of tag names (will replace existing tags)"),
       parent_task_id: z.string().optional().describe("Optional parent task ID to change parent/child relationships"),
-      assignees: z.array(z.string()).optional().describe(createAssigneeDescription(userData))
+      assignees: z.array(z.string()).optional().describe(createAssigneeDescription(userData)),
+      waiting_on: z.array(z.string()).optional().describe("Optional array of task IDs that this task should wait on (will replace existing waiting_on relationships)"),
+      blocking: z.array(z.string()).optional().describe("Optional array of task IDs that this task should block. Note: This creates dependencies FROM those tasks TO this task (those tasks will wait on this one)"),
+      linked_tasks: z.array(z.string()).optional().describe("Optional array of task IDs to link as related tasks without blocking (will replace existing linked tasks)")
     },
     {
       readOnlyHint: false
     },
-    async ({ task_id, name, append_description, status, priority, due_date, start_date, time_estimate, tags, parent_task_id, assignees }) => {
+    async ({ task_id, name, append_description, status, priority, due_date, start_date, time_estimate, tags, parent_task_id, assignees, blocking, waiting_on, linked_tasks }) => {
       try {
         const userData = await getCurrentUser();
 
@@ -145,6 +153,168 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
         }
 
         const taskData = await taskResponse.json();
+
+        // Handle dependencies separately since they need individual API calls
+        let dependencyUpdateResults: string[] = [];
+        if (blocking !== undefined || waiting_on !== undefined || linked_tasks !== undefined) {
+          // Get current dependencies
+          const currentBlocking = taskData.blocking?.map((dep: any) => dep.id) || [];
+          const currentWaitingOn = taskData.waiting_on?.map((dep: any) => dep.id) || [];
+          const currentLinked = taskData.linked_tasks?.map((task: any) => task.id) || [];
+
+          // Handle blocking dependencies (tasks that should depend on this task)
+          if (blocking !== undefined) {
+            const toAddBlocking = blocking.filter(id => !currentBlocking.includes(id));
+            const toRemoveBlocking = currentBlocking.filter((id: string) => !blocking.includes(id));
+
+            // To make another task depend on this one, we need to add a dependency FROM that task TO this task
+            for (const depTaskId of toAddBlocking) {
+              try {
+                const addDepResponse = await fetch(
+                  `https://api.clickup.com/api/v2/task/${depTaskId}/dependency`,
+                  {
+                    method: 'POST',
+                    headers: {
+                      Authorization: CONFIG.apiKey,
+                      'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                      depends_on: task_id,
+                      dependency_type: 1 // The other task waits on this task
+                    })
+                  }
+                );
+                if (!addDepResponse.ok) {
+                  console.error(`Failed to add blocking dependency "${depTaskId}": ${addDepResponse.status}`);
+                  dependencyUpdateResults.push(`Failed to add blocking: ${depTaskId}`);
+                }
+              } catch (error) {
+                console.error(`Error adding blocking dependency "${depTaskId}":`, error);
+                dependencyUpdateResults.push(`Error adding blocking: ${depTaskId}`);
+              }
+            }
+
+            for (const depTaskId of toRemoveBlocking) {
+              try {
+                // Remove the dependency from the other task's perspective
+                const removeDepResponse = await fetch(
+                  `https://api.clickup.com/api/v2/task/${depTaskId}/dependency?depends_on=${task_id}`,
+                  {
+                    method: 'DELETE',
+                    headers: {
+                      Authorization: CONFIG.apiKey
+                    }
+                  }
+                );
+                if (!removeDepResponse.ok) {
+                  console.error(`Failed to remove blocking dependency "${depTaskId}": ${removeDepResponse.status}`);
+                  dependencyUpdateResults.push(`Failed to remove blocking: ${depTaskId}`);
+                }
+              } catch (error) {
+                console.error(`Error removing blocking dependency "${depTaskId}":`, error);
+                dependencyUpdateResults.push(`Error removing blocking: ${depTaskId}`);
+              }
+            }
+          }
+
+          // Handle waiting_on dependencies
+          if (waiting_on !== undefined) {
+            const toAddWaitingOn = waiting_on.filter(id => !currentWaitingOn.includes(id));
+            const toRemoveWaitingOn = currentWaitingOn.filter((id: string) => !waiting_on.includes(id));
+
+            for (const depTaskId of toAddWaitingOn) {
+              try {
+                const addDepResponse = await fetch(
+                  `https://api.clickup.com/api/v2/task/${task_id}/dependency`,
+                  {
+                    method: 'POST',
+                    headers: {
+                      Authorization: CONFIG.apiKey,
+                      'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                      depends_on: depTaskId,
+                      dependency_type: 1 // 0 = blocking, 1 = waiting on
+                    })
+                  }
+                );
+                if (!addDepResponse.ok) {
+                  console.error(`Failed to add waiting_on dependency "${depTaskId}": ${addDepResponse.status}`);
+                  dependencyUpdateResults.push(`Failed to add waiting_on: ${depTaskId}`);
+                }
+              } catch (error) {
+                console.error(`Error adding waiting_on dependency "${depTaskId}":`, error);
+                dependencyUpdateResults.push(`Error adding waiting_on: ${depTaskId}`);
+              }
+            }
+
+            for (const depTaskId of toRemoveWaitingOn) {
+              try {
+                // Remove the waiting_on dependency using query parameter
+                const removeDepResponse = await fetch(
+                  `https://api.clickup.com/api/v2/task/${task_id}/dependency?depends_on=${depTaskId}`,
+                  {
+                    method: 'DELETE',
+                    headers: {
+                      Authorization: CONFIG.apiKey
+                    }
+                  }
+                );
+                if (!removeDepResponse.ok) {
+                  console.error(`Failed to remove waiting_on dependency "${depTaskId}": ${removeDepResponse.status}`);
+                  dependencyUpdateResults.push(`Failed to remove waiting_on: ${depTaskId}`);
+                }
+              } catch (error) {
+                console.error(`Error removing waiting_on dependency "${depTaskId}":`, error);
+                dependencyUpdateResults.push(`Error removing waiting_on: ${depTaskId}`);
+              }
+            }
+          }
+
+          // Handle linked tasks (non-blocking relationships)
+          if (linked_tasks !== undefined) {
+            const toAddLinked = linked_tasks.filter(id => !currentLinked.includes(id));
+            const toRemoveLinked = currentLinked.filter((id: string) => !linked_tasks.includes(id));
+
+            for (const linkedTaskId of toAddLinked) {
+              try {
+                const addLinkResponse = await fetch(
+                  `https://api.clickup.com/api/v2/task/${task_id}/link/${linkedTaskId}`,
+                  {
+                    method: 'POST',
+                    headers: { Authorization: CONFIG.apiKey }
+                  }
+                );
+                if (!addLinkResponse.ok) {
+                  console.error(`Failed to add linked task "${linkedTaskId}": ${addLinkResponse.status}`);
+                  dependencyUpdateResults.push(`Failed to link: ${linkedTaskId}`);
+                }
+              } catch (error) {
+                console.error(`Error adding linked task "${linkedTaskId}":`, error);
+                dependencyUpdateResults.push(`Error linking: ${linkedTaskId}`);
+              }
+            }
+
+            for (const linkedTaskId of toRemoveLinked) {
+              try {
+                const removeLinkResponse = await fetch(
+                  `https://api.clickup.com/api/v2/task/${task_id}/link/${linkedTaskId}`,
+                  {
+                    method: 'DELETE',
+                    headers: { Authorization: CONFIG.apiKey }
+                  }
+                );
+                if (!removeLinkResponse.ok) {
+                  console.error(`Failed to remove linked task "${linkedTaskId}": ${removeLinkResponse.status}`);
+                  dependencyUpdateResults.push(`Failed to unlink: ${linkedTaskId}`);
+                }
+              } catch (error) {
+                console.error(`Error removing linked task "${linkedTaskId}":`, error);
+                dependencyUpdateResults.push(`Error unlinking: ${linkedTaskId}`);
+              }
+            }
+          }
+        }
 
         // Handle tags separately since they need individual API calls
         let tagUpdateResults: string[] = [];
@@ -219,8 +389,8 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
           updateBody.assignees = { add: assignees, rem: [] }; // Add new assignees, remove none
         }
 
-        // Check if there's anything to update (including tags which were handled separately)
-        if (Object.keys(updateBody).length === 0 && tags === undefined) {
+        // Check if there's anything to update (including tags and dependencies which were handled separately)
+        if (Object.keys(updateBody).length === 0 && tags === undefined && blocking === undefined && waiting_on === undefined && linked_tasks === undefined) {
           return {
             content: [
               {
@@ -251,8 +421,8 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
           updatedTask = await updateResponse.json();
         }
 
-        // If only tags were updated, fetch the task again to get the updated state
-        if (tags !== undefined && Object.keys(updateBody).length === 0) {
+        // If only tags or dependencies were updated, fetch the task again to get the updated state
+        if ((tags !== undefined || blocking !== undefined || waiting_on !== undefined || linked_tasks !== undefined) && Object.keys(updateBody).length === 0) {
           const refreshResponse = await fetch(`https://api.clickup.com/api/v2/task/${task_id}`, {
             headers: { Authorization: CONFIG.apiKey },
           });
@@ -262,8 +432,13 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
         }
 
         const responseLines = formatTaskResponse(updatedTask, 'updated', {
-          name, append_description, status, priority, due_date, start_date, time_estimate, tags, parent_task_id, assignees
+          name, append_description, status, priority, due_date, start_date, time_estimate, tags, parent_task_id, assignees, blocking, waiting_on, linked_tasks
         }, userData);
+
+        // Add dependency update results if any
+        if (dependencyUpdateResults.length > 0) {
+          responseLines.push('dependency_warnings: ' + dependencyUpdateResults.join('; '));
+        }
 
         // Add tag update results if any
         if (tagUpdateResults.length > 0) {
@@ -532,6 +707,18 @@ function formatTaskResponse(task: any, operation: 'created' | 'updated', params:
 
   if (params.parent_task_id !== undefined) {
     responseLines.push(`parent_task_id: ${params.parent_task_id}`);
+  }
+
+  if (params.blocking !== undefined && params.blocking.length > 0) {
+    responseLines.push(`blocking: ${params.blocking.join(', ')}`);
+  }
+
+  if (params.waiting_on !== undefined && params.waiting_on.length > 0) {
+    responseLines.push(`waiting_on: ${params.waiting_on.join(', ')}`);
+  }
+
+  if (params.linked_tasks !== undefined && params.linked_tasks.length > 0) {
+    responseLines.push(`linked_tasks: ${params.linked_tasks.join(', ')}`);
   }
 
   return responseLines;
