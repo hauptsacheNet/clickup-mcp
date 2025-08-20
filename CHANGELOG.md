@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- Fixed tag management in `updateTask` - tags are now properly added/removed using dedicated API endpoints
+  - The ClickUp API doesn't support updating tags via the general update endpoint
+  - `updateTask` now internally handles tag changes by calling the appropriate add/remove endpoints
+  - Compares current tags with requested tags to determine which to add or remove
+  - Maintains single tool interface while properly managing tags behind the scenes
+
 ## [1.4.0] - 2025-08-18
 
 ### Added
