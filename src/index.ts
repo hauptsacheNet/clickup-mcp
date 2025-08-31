@@ -140,7 +140,9 @@ const serverPromise = initializeServer();
 export { serverPromise };
 
 // Only connect to the transport if this file is being run directly (not imported)
-if (require.main === module) {
+// OR if not being imported by CLI (to support Claude Desktop's module loading)
+const isCliMode = process.argv.some(arg => arg.includes('cli.ts') || arg.includes('cli.js'));
+if (require.main === module || !isCliMode) {
   // Start receiving messages on stdin and sending messages on stdout after initialization
   serverPromise.then(() => {
     const transport = new StdioServerTransport();

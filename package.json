@@ -16,7 +16,8 @@
     "cli": "npx ts-node src/cli.ts",
     "prettier": "prettier --write src/**/*.ts",
     "prepublishOnly": "rm -r dist && npm run build",
-    "release": "npm run build && npm publish --access public && git add . && git commit -m \"Release v$(node -p 'require(\"./package.json\").version')\" && git tag -a v$(node -p 'require(\"./package.json\").version') -m \"Release v$(node -p 'require(\"./package.json\").version')\" && git push && git push --tags"
+    "release": "npm run build && npm publish --access public && git add . && git commit -m \"Release v$(node -p 'require(\"./package.json\").version')\" && git tag -a v$(node -p 'require(\"./package.json\").version') -m \"Release v$(node -p 'require(\"./package.json\").version')\" && git push && git push --tags",
+    "dxt": "npm run build && npx dxt pack"
   },
   "keywords": [
     "clickup",
