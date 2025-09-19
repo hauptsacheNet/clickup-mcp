@@ -1,5 +1,6 @@
 import {ContentBlock, ImageMetadataBlock} from "./types";
 import {CONFIG} from "./config";
+import { estimateBase64Size } from "./data-uri";
 import { Buffer } from "buffer";
 
 /**
@@ -29,10 +30,12 @@ export async function downloadImages(content: (ContentBlock | ImageMetadataBlock
   // Download images in parallel and replace image_metadata blocks
   const downloadPromises = countLimitedContent.map(async (block) => {
     if (block.type === "image_metadata") {
+      if (block.inlineData) {
+        return convertInlineImage(block, perImageBudget);
+      }
       return await downloadSingleImage(block, perImageBudget);
-    } else {
-      return block as ContentBlock;
     }
+    return block as ContentBlock;
   });
   
   return Promise.all(downloadPromises);
@@ -75,10 +78,7 @@ function applyCountBasedLimitToImageMetadata(content: (ContentBlock | ImageMetad
  * Download a single image from an image_metadata block, trying different sizes if needed
  */
 async function downloadSingleImage(imageMetadata: ImageMetadataBlock, perImageBudget: number): Promise<ContentBlock> {
-  const fallbackText = {
-    type: "text" as const,
-    text: `[Image "${imageMetadata.alt}" removed due to size limitations.]`,
-  };
+  const fallbackText = createImageFallback(imageMetadata);
 
   // Try each URL in order (largest to smallest)
   for (const url of imageMetadata.urls) {
@@ -135,4 +135,39 @@ async function downloadSingleImage(imageMetadata: ImageMetadataBlock, perImageBu
 
   // If all URLs failed or were too large, return fallback text
   return fallbackText;
+}
+
+/**
+ * Create a fallback text block when an image cannot be included
+ */
+function createImageFallback(imageMetadata: ImageMetadataBlock): ContentBlock {
+  return {
+    type: "text" as const,
+    text: `[Image "${imageMetadata.alt}" removed due to size limitations.]`,
+  };
+}
+
+/**
+ * Convert inline image data URIs into image blocks while respecting size budgets
+ */
+function convertInlineImage(imageMetadata: ImageMetadataBlock, perImageBudget: number): ContentBlock {
+  const inlineData = imageMetadata.inlineData;
+  if (!inlineData) {
+    return createImageFallback(imageMetadata);
+  }
+
+  const estimatedSize = estimateBase64Size(inlineData.base64Data);
+
+  if (perImageBudget <= 0 || estimatedSize > perImageBudget) {
+    console.error(
+      `Inline image for "${imageMetadata.alt}" is ${estimatedSize} bytes, exceeds budget of ${perImageBudget} bytes`
+    );
+    return createImageFallback(imageMetadata);
+  }
+
+  return {
+    type: "image",
+    mimeType: inlineData.mimeType || "image/png",
+    data: inlineData.base64Data,
+  };
 }

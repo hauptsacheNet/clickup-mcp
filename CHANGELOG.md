@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Task dependency and relationship management in `updateTask` tool
 
+### Fixed
+- Strip inline base64 data URIs from `getTaskById` responses and surface them as proper image blocks instead of embedding them in text content
+
 ## [1.4.1] - 2025-08-31
 
 ### Fixed

@@ -1,4 +1,5 @@
 import { CallToolResult } from "@modelcontextprotocol/sdk/types";
+import { ParsedDataUri } from "./data-uri";
 
 // Define ContentBlock type alias for clarity
 export type ContentBlock = CallToolResult['content'][number];
@@ -8,6 +9,7 @@ export interface ImageMetadataBlock {
   type: "image_metadata";
   urls: string[]; // Array of image URLs (largest to smallest preference)
   alt: string; // Image description/filename
+  inlineData?: ParsedDataUri; // Optional inline data URI payload
 }
 
 // Simplified Event Wrapper for date-based content

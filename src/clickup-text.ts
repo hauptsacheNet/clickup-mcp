@@ -1,6 +1,7 @@
 import { CallToolResult } from "@modelcontextprotocol/sdk/types";
 import { Buffer } from "buffer";
 import { ImageMetadataBlock } from "./shared/types";
+import { parseDataUri } from "./shared/data-uri";
 
 /**
  * Represents a ClickUp text item which can be plain text or an image
@@ -78,9 +79,42 @@ export async function processClickUpText(
 
     // Handle image items
     if (item.type === "image" && item.image && item.image.url) {
-      // Add image URL reference inline to current text block
       const imageFileName = item.image.name || item.image.title || "image";
-      currentTextBlock += `\nImage: ${imageFileName} - ${item.image.url}`;
+      const imageUrl = item.image.url;
+      const altText = item.text || imageFileName;
+
+      if (imageUrl.startsWith("data:")) {
+        const parsedData = parseDataUri(imageUrl);
+        currentTextBlock += `\nImage: ${imageFileName} - [inline image data]`;
+
+        if (currentTextBlock.trim()) {
+          contentBlocks.push({
+            type: "text" as const,
+            text: currentTextBlock.trim(),
+          });
+        }
+
+        currentTextBlock = "";
+
+        if (parsedData) {
+          contentBlocks.push({
+            type: "image_metadata",
+            urls: [],
+            alt: altText,
+            inlineData: parsedData,
+          });
+        } else {
+          console.error(`Unable to parse inline image data for ${imageFileName}`);
+          contentBlocks.push({
+            type: "text" as const,
+            text: `[Image "${altText}" omitted: unsupported inline data URI]`,
+          });
+        }
+        continue;
+      }
+
+      // Add image URL reference inline to current text block
+      currentTextBlock += `\nImage: ${imageFileName} - ${imageUrl}`;
 
       // Get working thumbnail URLs from data-attachment if available
       const extractedThumbnails = extractThumbnailsFromDataAttachment(item.attributes);
@@ -110,7 +144,7 @@ export async function processClickUpText(
         contentBlocks.push({
           type: "image_metadata",
           urls: urls,
-          alt: item.text || imageFileName,
+          alt: altText,
         });
       }
       // If no thumbnails, just treat as a file reference (already added to currentTextBlock)
@@ -167,6 +201,39 @@ export function processClickUpMarkdown(
 
     // Add text before the image reference to the current text block
     currentTextBlock += markdownText.substring(lastIndex, match.index);
+
+    if (imageUrl.startsWith("data:")) {
+      const imageFileName = altText || "image";
+      const parsedData = parseDataUri(imageUrl);
+      currentTextBlock += `\nImage: ${imageFileName} - [inline image data]`;
+
+      if (currentTextBlock.trim()) {
+        contentBlocks.push({
+          type: "text" as const,
+          text: currentTextBlock.trim(),
+        });
+      }
+
+      currentTextBlock = "";
+
+      if (parsedData) {
+        contentBlocks.push({
+          type: "image_metadata",
+          urls: [],
+          alt: altText || imageFileName,
+          inlineData: parsedData,
+        });
+      } else {
+        console.error(`Unable to parse inline image data for ${imageFileName}`);
+        contentBlocks.push({
+          type: "text" as const,
+          text: `[Image "${altText || imageFileName}" omitted: unsupported inline data URI]`,
+        });
+      }
+
+      lastIndex = match.index + fullMatch.length;
+      continue;
+    }
 
     // Check if this image URL exists in our attachments
     const attachment = attachmentMap.get(imageUrl);
