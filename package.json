@@ -10,9 +10,9 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "npx tsc",
     "start": "node dist/index.js",
-    "dev": "tsc -w & nodemon dist/index.js",
+    "dev": "npx tsc -w & nodemon dist/index.js",
     "cli": "npx ts-node src/cli.ts",
     "prettier": "prettier --write src/**/*.ts",
     "prepublishOnly": "rm -r dist && npm run build",
