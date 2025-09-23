@@ -9,3 +9,4 @@
 - Update the CHANGELOG.md when changing or implementing a new feature.
 - Backwards compatibility does not matter, an LLM will understand new parameters.
 - Mention ID's, not just names, when outputting references. for example "User: Username (user_id: 12345)"
+- You can use ClickUp List 4500611 (Marco Test) to test new mcp calls. (even destructive update calls)
