@@ -45,6 +45,6 @@ jobs:
       - name: Upload MCPB artifact
         uses: actions/upload-artifact@v4
         with:
-          name: clickup-mcp-${{ github.ref_name }}-${{ github.sha }}
+          name: ClickUp.mcpb
           path: "*.mcpb"
           retention-days: 90
