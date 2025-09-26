@@ -28,13 +28,13 @@ jobs:
       - name: Run tests
         run: npm test
 
-      - name: Build and package DXT
-        run: npm run dxt
+      - name: Build and package MCPB
+        run: npm run mcpb
 
       - name: Create Release
         uses: ncipollo/release-action@v1
         with:
-          artifacts: "*.dxt"
+          artifacts: "*.mcpb"
           generateReleaseNotes: true
           draft: false
           prerelease: false

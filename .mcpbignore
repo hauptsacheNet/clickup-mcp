@@ -15,7 +15,6 @@ Thumbs.db
 *.mcpb
 
 # Build artifacts
-node_modules/
 coverage/
 *.tsbuildinfo
 .nyc_output
@@ -33,18 +32,27 @@ temp/
 .git/
 .github/
 .gitignore
-.mcpbignore
 
-# Source files (npm packages ship compiled dist/)
+# Dev dependencies (exclude from bundle, keep runtime deps)
+node_modules/@anthropic-ai/
+node_modules/@types/
+node_modules/dotenv/
+node_modules/nodemon/
+node_modules/prettier/
+node_modules/ts-node/
+node_modules/typescript/
+node_modules/undici/
+
+# Source files (bundle uses compiled dist/)
 src/
 
 # Test files
-**/*.test.ts
-**/*.test.js
-**/*.spec.ts
-**/*.spec.js
 test/
 tests/
+**/*.test.js
+**/*.test.ts
+**/*.spec.js
+**/*.spec.ts
 
 # Configuration files
 tsconfig.json
@@ -55,6 +63,4 @@ nodemon.json
 # Documentation (except README.md)
 *.md
 !README.md
-CHANGELOG.md
-CLAUDE.md
 CLAUDE.local.md

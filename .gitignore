@@ -1,14 +1,31 @@
+# System/OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
 # Development files
-node_modules/
 .env
 .env.*
 *.log
+*.local*
+*.mcpb
+
+# Build artifacts
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.nyc_output
+.cache
+.tmp
+.temp
+temp/
 
 # IDE files
 .idea/
 .vscode/
 .claude/
-
-# Compiled output
-dist
-clickup-mcp.dxt
