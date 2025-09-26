@@ -90,7 +90,7 @@
     "clickup_team_id": {
       "type": "string", 
       "title": "ClickUp Team ID",
-      "description": "Your ClickUp Team ID (the ~7 digit number in the URL when in settings)",
+      "description": "Your ClickUp Team ID (the 7–10 digit number in the URL when in settings)",
       "required": true
     },
     "clickup_primary_language": {

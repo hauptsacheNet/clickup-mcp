@@ -74,38 +74,81 @@ Turn natural language into powerful ClickUp actions:
 - **Append-Only Descriptions**: Description fields are never overwritten - new content is safely appended with timestamps
 - **Normal Field Updates**: Status, priority, assignees, tags, and dates can be updated normally (easily revertible through ClickUp's history)
 
-## Setup for Claude Desktop, Windsurf, or Cursor
+## Installation
 
-1. **Prerequisites**:
-   - Your `CLICKUP_API_KEY` (Profile Icon > Settings > Apps > API Token ~ usually starts with pk_)
-   - and your `CLICKUP_TEAM_ID` (The ~7 digit number in the url when you are in the settings)
+### Prerequisites
 
-2. **Configuration**:
-   Add the following to your MCP configuration file:
+For all installation methods, you'll need:
+- Your `CLICKUP_API_KEY` (Profile Icon > Settings > Apps > API Token ~ usually starts with pk_)
+- Your `CLICKUP_TEAM_ID` (The 7–10 digit number in the URL when you are in the settings)
 
-   ```json
-   {
-     "mcpServers": {
-       "clickup": {
-         "command": "npx",
-         "args": [
-           "@hauptsache.net/clickup-mcp@latest"
-         ],
-         "env": {
-           "CLICKUP_API_KEY": "your_api_key",
-           "CLICKUP_TEAM_ID": "your_team_id"
-         }
-       }
-     }
-   }
-   ```
+### Option 1: MCPB Bundle (Recommended for Claude Desktop)
 
-   Replace `your_api_key` and `your_team_id` with your actual ClickUp credentials.
+Download the pre-built bundle from our [releases page](https://github.com/hauptsacheNet/clickup-mcp/releases). This method requires no Node.js installation.
 
-3. **Connect Your AI Assistant**:
-   - **Claude Desktop**: Add this configuration in Settings > Developer > Edit Config
-   - **Windsurf**: Add to your MCP configuration file
-   - **Cursor**: Configure through the MCP settings panel
+You'll get a configuration screen where you are prompted to enter your API key and team ID.
+
+### Option 2: NPX Installation
+
+This method automatically updates to the latest version and is preferred for users who want the newest features.
+
+**For Claude Desktop, Windsurf, Cursor and others:**
+
+Add the following to your MCP configuration file:
+
+```json
+{
+  "mcpServers": {
+    "clickup": {
+      "command": "npx",
+      "args": [
+        "@hauptsache.net/clickup-mcp@latest"
+      ],
+      "env": {
+        "CLICKUP_API_KEY": "your_api_key",
+        "CLICKUP_TEAM_ID": "your_team_id"
+      }
+    }
+  }
+}
+```
+
+Replace `your_api_key` and `your_team_id` with your actual ClickUp credentials.
+
+**Where to add this configuration:**
+- **Claude Desktop**: Settings > Developer > Edit Config
+- **Windsurf**: Add to your MCP configuration file
+- **Cursor**: Configure through the MCP settings panel
+
+### Option 3: Coding Tools Integration
+
+**Claude Code (CLI):**
+```bash
+claude mcp add clickup \
+  --env CLICKUP_API_KEY=YOUR_KEY \
+  --env CLICKUP_TEAM_ID=YOUR_ID \
+  --env CLICKUP_MCP_MODE=read-minimal \
+  --env MAX_IMAGES=16 \
+  --env MAX_RESPONSE_SIZE_MB=4 \
+  -- npx -y @hauptsache.net/clickup-mcp
+```
+
+> Claude Code can handle a lot of images, thus the recommended increased limits.
+ 
+> Note the `CLICKUP_MCP_MODE=read-minimal`. This is my usage recommendation, but feel free to use one of the other modes.
+
+**OpenAI Codex:**
+Add these lines to your `~/.codex/config.toml` file:
+```toml
+[mcp_servers.clickup]
+command = "npx"
+args = ["-y", "@hauptsache.net/clickup-mcp@latest"]
+env = { "CLICKUP_API_KEY" = "YOUR_KEY", "CLICKUP_TEAM_ID" = "YOUR_ID", "CLICKUP_MCP_MODE" = "read-minimal" }
+```
+
+> Codex seems to not be able to handle images from MCP's. See [this issue](https://github.com/openai/codex/issues/3741) for more details.
+
+> Note the `CLICKUP_MCP_MODE=read-minimal`. This is my usage recommendation, but feel free to use one of the other modes.
 
 ## MCP Modes & Available Tools
 
