@@ -1,8 +1,8 @@
 {
-  "dxt_version": "0.1",
+  "manifest_version": "0.2",
   "name": "@hauptsache.net/clickup-mcp",
   "display_name": "ClickUp",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "description": "Search, create, and retrieve tasks and documents, add comments, and track time through natural language commands.",
   "author": {
     "name": "Marco Pfeiffer",
@@ -90,7 +90,7 @@
     "clickup_team_id": {
       "type": "string", 
       "title": "ClickUp Team ID",
-      "description": "Your ClickUp Team ID (the ~7 digit number in the URL when in settings)",
+      "description": "Your ClickUp Team ID (the 7–10 digit number in the URL when in settings)",
       "required": true
     },
     "clickup_primary_language": {
