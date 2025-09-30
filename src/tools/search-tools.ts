@@ -5,6 +5,25 @@ import {isTaskId, getTaskSearchIndex, getAllTeamMembers, performMultiTermSearch}
 import {generateTaskMetadata} from "./task-tools";
 
 const MAX_SEARCH_RESULTS = 50;
+const GLOBAL_REFRESH_INTERVAL = 60000; // 60 seconds - matches rate limit time frame
+
+// Time entries cache - per list ID to enable granular caching
+const timeEntriesCache = new Map<string, Promise<any[]>>();
+const timeEntriesCacheTimeouts = new Map<string, NodeJS.Timeout>();
+
+/**
+ * Clears all time entries cache and their auto-cleanup timeouts
+ * Called after time entry creation to ensure fresh data on next fetch
+ */
+export function clearTimeEntriesCache() {
+  // Clear all pending timeouts
+  timeEntriesCacheTimeouts.forEach(timeout => clearTimeout(timeout));
+  timeEntriesCacheTimeouts.clear();
+
+  // Clear the cache
+  timeEntriesCache.clear();
+  console.error('Cleared time entries cache');
+}
 
 
 export function registerSearchTools(server: McpServer, userData: any) {
@@ -197,7 +216,7 @@ export function registerSearchTools(server: McpServer, userData: any) {
 }
 
 /**
- * Fetch time entries for a list of unique list IDs
+ * Fetch time entries for a list of unique list IDs with per-list caching
  */
 async function fetchBulkTimeEntries(listIds: string[]): Promise<any[]> {
   try {
@@ -210,29 +229,52 @@ async function fetchBulkTimeEntries(listIds: string[]): Promise<any[]> {
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     const startDate = thirtyDaysAgo.getTime();
 
-    // Fetch time entries for each unique list ID
-    const timeEntryPromises = listIds.map(async (listId) => {
-      const params = new URLSearchParams({
-        list_id: listId,
-        start_date: startDate.toString(),
-        include_location_names: 'true'
-      });
-
-      if (assigneeParam) {
-        params.append('assignee', assigneeParam);
+    // Fetch time entries for each unique list ID, using cache when available
+    const timeEntryPromises = listIds.map((listId) => {
+      // Check cache first
+      const cachedPromise = timeEntriesCache.get(listId);
+      if (cachedPromise) {
+        return cachedPromise;
       }
 
-      const response = await fetch(`https://api.clickup.com/api/v2/team/${CONFIG.teamId}/time_entries?${params}`, {
-        headers: { Authorization: CONFIG.apiKey },
-      });
+      // Create new fetch promise
+      const fetchPromise = (async () => {
+        const params = new URLSearchParams({
+          list_id: listId,
+          start_date: startDate.toString(),
+          include_location_names: 'true'
+        });
 
-      if (!response.ok) {
-        console.error(`Error fetching time entries for list ${listId}: ${response.status} ${response.statusText}`);
-        return [];
-      }
+        if (assigneeParam) {
+          params.append('assignee', assigneeParam);
+        }
 
-      const data = await response.json();
-      return data.data || [];
+        const response = await fetch(`https://api.clickup.com/api/v2/team/${CONFIG.teamId}/time_entries?${params}`, {
+          headers: { Authorization: CONFIG.apiKey },
+        });
+
+        if (!response.ok) {
+          console.error(`Error fetching time entries for list ${listId}: ${response.status} ${response.statusText}`);
+          return [];
+        }
+
+        const data = await response.json();
+        return data.data || [];
+      })();
+
+      // Store in cache
+      timeEntriesCache.set(listId, fetchPromise);
+
+      // Set auto-cleanup timeout
+      const timeout = setTimeout(() => {
+        timeEntriesCache.delete(listId);
+        timeEntriesCacheTimeouts.delete(listId);
+        console.error(`Auto-cleaned time entries cache for list ${listId}`);
+      }, GLOBAL_REFRESH_INTERVAL);
+
+      timeEntriesCacheTimeouts.set(listId, timeout);
+
+      return fetchPromise;
     });
 
     // Wait for all requests to complete and flatten results
