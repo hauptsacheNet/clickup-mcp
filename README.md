@@ -2,9 +2,6 @@
 
 Model Context Protocol (MCP) server enabling AI assistants to interact with ClickUp workspaces. Get complete task context with comments and images, search across projects, create and update tasks, collaborate through comments, and track time - all through natural language.
 
-> **⚠️ Experimental Software Notice**  
-> This MCP is experimental and under active development. While implemented with great care to prevent data loss through append-only description updates and other safety measures, it cannot be guaranteed to be completely safe. Please use with caution, especially in production environments. Always test in a non-critical workspace first. 🧪
-
 ## What You Can Do
 
 Turn natural language into powerful ClickUp actions:
@@ -124,7 +121,7 @@ Replace `your_api_key` and `your_team_id` with your actual ClickUp credentials.
 
 **Claude Code (CLI):**
 ```bash
-claude mcp add clickup \
+claude mcp add --scope user clickup \
   --env CLICKUP_API_KEY=YOUR_KEY \
   --env CLICKUP_TEAM_ID=YOUR_ID \
   --env CLICKUP_MCP_MODE=read-minimal \
