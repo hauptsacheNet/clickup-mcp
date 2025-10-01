@@ -72,8 +72,12 @@
       "description": "Get a ClickUp document with page structure and content. Supports reading specific pages and provides complete document metadata with navigation."
     },
     {
-      "name": "writeDocument",
-      "description": "Universal tool for document and page operations with smart document creation. Create new documents, pages, sub-pages, or update existing pages with append mode support for adding content without overwriting."
+      "name": "updateDocumentPage",
+      "description": "Update an existing document page's content and/or name. Requires both doc_id and page_id from readDocument. Supports append mode to add content without overwriting."
+    },
+    {
+      "name": "createDocumentOrPage",
+      "description": "Create a new document with its first page (using space_id or list_id), add a page to an existing document (using doc_id), or create a sub-page (using doc_id and parent_page_id). Supports markdown content."
     }
   ],
   "user_config": {

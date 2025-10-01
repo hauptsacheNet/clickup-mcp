@@ -108,16 +108,16 @@ export function registerDocumentToolsRead(server: McpServer) {
 
         if (pages.length === 0) {
           return {
-            content: [{ 
-              type: "text", 
+            content: [{
+              type: "text",
               text: `📄 **Document: ${doc.name}** (doc_id: ${doc_id})
 📎 Document URL: ${generateDocumentUrl(doc_id)}
 
 ⚠️ This document exists but has no pages yet.
 
 **Next steps:**
-- Use \`writeDocument\` with parent_type="doc" and parent_id="${doc_id}" to add the first page
-- Example: writeDocument(parent_type="doc", parent_id="${doc_id}", page_name="Introduction", content="Your content here")`
+- Use \`createDocumentOrPage\` with doc_id="${doc_id}" to add the first page
+- Example: createDocumentOrPage(doc_id="${doc_id}", name="Introduction", content="Your content here")`
             }],
           };
         }
@@ -182,8 +182,8 @@ export function registerDocumentToolsRead(server: McpServer) {
           result.push('*This page is empty.*');
           result.push('');
           result.push('**💡 To add content to this page:**');
-          result.push(`Use \`writeDocument\` with page_id="${targetPage.id}" and your content.`);
-          result.push(`Example: writeDocument(page_id="${targetPage.id}", content="Your content here")`);
+          result.push(`Use \`updateDocumentPage\` with doc_id="${doc_id}", page_id="${targetPage.id}" and your content.`);
+          result.push(`Example: updateDocumentPage(doc_id="${doc_id}", page_id="${targetPage.id}", content="Your content here")`);
           return {
             content: [
               {type: "text", text: result.join('\n')},
@@ -208,36 +208,30 @@ export function registerDocumentToolsRead(server: McpServer) {
 
 export function registerDocumentToolsWrite(server: McpServer) {
   server.tool(
-    "writeDocument",
+    "updateDocumentPage",
     [
-      "Universal tool for document and page operations with smart document creation.",
-      "Create new documents by using parent_type 'space' or 'list'.",
-      "Create pages in existing documents by using parent_type 'doc'.",
-      "Create sub-pages by using parent_type 'page'.",
-      "Update existing pages by providing page_id.",
-      "Always reference documents by their URLs when creating or updating."
+      "Updates an existing document page's content and/or name.",
+      "Use this when you have both doc_id and page_id from readDocument.",
+      "Content is in markdown format and can be replaced or appended.",
+      "Always reference documents by their URLs when sharing with users."
     ].join("\n"),
     {
+      doc_id: z
+        .string()
+        .min(1)
+        .describe("The document ID containing the page (from readDocument)"),
       page_id: z
         .string()
-        .optional()
-        .describe("Optional page ID to update (if provided, updates existing page; if not, creates new page/document)"),
-      parent_type: z
-        .enum(["space", "list", "doc", "page"])
-        .optional()
-        .describe("Type of parent when creating new content (required if page_id not provided)"),
-      parent_id: z
+        .min(1)
+        .describe("The page ID to update (from readDocument)"),
+      name: z
         .string()
         .optional()
-        .describe("ID of parent (space, list, document, or page) when creating new content (required if page_id not provided)"),
-      page_name: z
-        .string()
-        .optional()
-        .describe("Name for the page (required for new pages, optional for updates to rename)"),
+        .describe("Optional: new name for the page"),
       content: z
         .string()
         .optional()
-        .describe("Page content in markdown format (optional for updates)"),
+        .describe("Optional: page content in markdown format"),
       append: z
         .boolean()
         .optional()
@@ -246,76 +240,152 @@ export function registerDocumentToolsWrite(server: McpServer) {
     {
       readOnlyHint: false
     },
-    async ({ page_id, parent_type, parent_id, page_name, content, append = false }) => {
+    async ({ doc_id, page_id, name, content, append = false }) => {
       try {
-        // Validate input parameters
-        if (!page_id && (!parent_type || !parent_id)) {
+        const requestBody: any = {};
+
+        if (name) {
+          requestBody.name = name;
+        }
+
+        if (content !== undefined) {
+          requestBody.content = content;
+          requestBody.content_edit_mode = append ? 'append' : 'replace';
+        }
+
+        if (Object.keys(requestBody).length === 0) {
           return {
-            content: [{ 
-              type: "text", 
-              text: "Error: Either page_id (for updates) or both parent_type and parent_id (for creation) must be provided."
+            content: [{
+              type: "text",
+              text: "Error: At least one of 'name' or 'content' must be provided for update."
             }],
           };
         }
 
-        if (!page_id && !page_name) {
-          return {
-            content: [{ 
-              type: "text", 
-              text: "Error: page_name is required when creating new pages."
-            }],
-          };
+        const response = await fetch(`https://api.clickup.com/api/v3/workspaces/${CONFIG.teamId}/docs/${doc_id}/pages/${page_id}`, {
+          method: 'PUT',
+          headers: {
+            Authorization: CONFIG.apiKey,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(requestBody),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Error updating page: ${response.status} ${response.statusText}. ${errorText}`);
         }
 
-        // Case 1: Update existing page
-        if (page_id) {
-          const requestBody: any = {};
-          
-          if (page_name) {
-            requestBody.name = page_name;
-          }
-          
-          if (content !== undefined) {
-            requestBody.content = content;
-            // Use native append mode from ClickUp API
-            requestBody.content_edit_mode = append ? 'append' : 'replace';
-          }
+        // Handle potentially empty response
+        const responseText = await response.text();
+        let updatedPage: any = {};
 
-          const response = await fetch(`https://api.clickup.com/api/v3/docs/pages/${page_id}`, {
-            method: 'PUT',
-            headers: {
-              Authorization: CONFIG.apiKey,
-              'Content-Type': 'application/json',
+        if (responseText && responseText.trim()) {
+          try {
+            const data = JSON.parse(responseText);
+            updatedPage = data.page || data;
+          } catch (e) {
+            // If JSON parsing fails, continue with empty updatedPage object
+            console.error('Warning: Could not parse response JSON, but update was successful');
+          }
+        }
+
+        const pageName = updatedPage.name || name || "page";
+
+        return {
+          content: [{
+            type: "text",
+            text: `✅ Successfully updated page "${pageName}" (page_id: ${page_id})\n\nPage URL: ${generateDocumentUrl(doc_id, page_id)}`
+          }],
+        };
+
+      } catch (error) {
+        console.error('Error updating document page:', error);
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Error updating page: ${error instanceof Error ? error.message : 'Unknown error'}`,
             },
-            body: JSON.stringify(requestBody),
-          });
+          ],
+        };
+      }
+    }
+  );
 
-          if (!response.ok) {
-            throw new Error(`Error updating page: ${response.status} ${response.statusText}`);
-          }
-
-          const data = await response.json();
-          const updatedPage = data.page;
-
+  server.tool(
+    "createDocumentOrPage",
+    [
+      "Creates a new document with its first page, OR adds a page to an existing document.",
+      "To create a NEW document: provide space_id OR list_id + name + content",
+      "To add a page to EXISTING document: provide doc_id + name + content",
+      "To create a sub-page: provide doc_id + parent_page_id + name + content",
+      "Content is in markdown format and supports ClickUp's markdown features.",
+      "Always reference documents by their URLs when sharing with users."
+    ].join("\n"),
+    {
+      space_id: z
+        .string()
+        .optional()
+        .describe("Create NEW document in this space (mutually exclusive with list_id and doc_id)"),
+      list_id: z
+        .string()
+        .optional()
+        .describe("Create NEW document in this list (mutually exclusive with space_id and doc_id)"),
+      doc_id: z
+        .string()
+        .optional()
+        .describe("Add page to EXISTING document with this ID (mutually exclusive with space_id and list_id)"),
+      parent_page_id: z
+        .string()
+        .optional()
+        .describe("Optional: when provided with doc_id, creates a sub-page under this parent page"),
+      name: z
+        .string()
+        .min(1)
+        .describe("Name for the document/page being created"),
+      content: z
+        .string()
+        .optional()
+        .describe("Optional: page content in markdown format")
+    },
+    {
+      readOnlyHint: false
+    },
+    async ({ space_id, list_id, doc_id, parent_page_id, name, content }) => {
+      try {
+        // Validate mutually exclusive parameters
+        const locationParams = [space_id, list_id, doc_id].filter(Boolean).length;
+        if (locationParams !== 1) {
           return {
-            content: [{ 
-              type: "text", 
-              text: `✅ Successfully updated page "${updatedPage.name}" (${page_id})\n\nPage URL: ${generateDocumentUrl(updatedPage.doc_id, page_id)}`
+            content: [{
+              type: "text",
+              text: "Error: Provide exactly ONE of: space_id (new doc in space), list_id (new doc in list), or doc_id (page in existing doc)."
             }],
           };
         }
 
-        // Case 2: Create new content
-        let docId: string;
-        
-        if (parent_type === "space" || parent_type === "list") {
-          // Create new document first, then create first page manually
-          const docRequestBody: any = {
-            name: page_name, // Document name matches first page name
-            create_page: false, // Don't auto-create page, we'll create it manually for better control
+        if (parent_page_id && !doc_id) {
+          return {
+            content: [{
+              type: "text",
+              text: "Error: parent_page_id requires doc_id to be provided."
+            }],
+          };
+        }
+
+        // Case 1: Create new document in space or list
+        if (space_id || list_id) {
+          const parentId = space_id || list_id;
+          const parentType = space_id ? 4 : 6; // 4=Space, 6=List
+
+          // Create new document
+          const docRequestBody = {
+            name: name,
+            create_page: false,
             parent: {
-              id: parent_id,
-              type: parent_type === "space" ? 4 : parent_type === "list" ? 6 : 7 // 4=Space, 6=List, 7=Workspace
+              id: parentId,
+              type: parentType
             }
           };
 
@@ -329,19 +399,20 @@ export function registerDocumentToolsWrite(server: McpServer) {
           });
 
           if (!docResponse.ok) {
-            throw new Error(`Error creating document: ${docResponse.status} ${docResponse.statusText}`);
+            const errorText = await docResponse.text();
+            throw new Error(`Error creating document: ${docResponse.status} ${docResponse.statusText}. ${errorText}`);
           }
 
           const docData = await docResponse.json();
-          docId = docData.id;
+          const newDocId = docData.id;
 
-          // Create the first page manually for better control
+          // Create the first page
           const pageRequestBody = {
-            name: page_name,
+            name: name,
             content: content || '',
           };
 
-          const pageResponse = await fetch(`https://api.clickup.com/api/v3/workspaces/${CONFIG.teamId}/docs/${docId}/pages`, {
+          const pageResponse = await fetch(`https://api.clickup.com/api/v3/workspaces/${CONFIG.teamId}/docs/${newDocId}/pages`, {
             method: 'POST',
             headers: {
               Authorization: CONFIG.apiKey,
@@ -351,29 +422,33 @@ export function registerDocumentToolsWrite(server: McpServer) {
           });
 
           if (!pageResponse.ok) {
-            throw new Error(`Error creating first page: ${pageResponse.status} ${pageResponse.statusText}`);
+            const errorText = await pageResponse.text();
+            throw new Error(`Error creating first page: ${pageResponse.status} ${pageResponse.statusText}. ${errorText}`);
           }
 
           const pageData = await pageResponse.json();
           const firstPage = pageData.page || pageData;
 
           return {
-            content: [{ 
-              type: "text", 
-              text: `✅ Successfully created new document "${page_name}" with first page\n\nDocument URL: ${generateDocumentUrl(docId)}\nFirst Page URL: ${generateDocumentUrl(docId, firstPage.id)}`
+            content: [{
+              type: "text",
+              text: `✅ Successfully created new document "${name}" (doc_id: ${newDocId})\n\nDocument URL: ${generateDocumentUrl(newDocId)}\nFirst Page URL: ${generateDocumentUrl(newDocId, firstPage.id)}`
             }],
           };
+        }
 
-        } else if (parent_type === "doc") {
-          // Create new page in existing document
-          docId = parent_id!;
-          
-          const pageRequestBody = {
-            name: page_name,
+        // Case 2: Add page to existing document or create sub-page
+        if (doc_id) {
+          const pageRequestBody: any = {
+            name: name,
             content: content || '',
           };
 
-          const response = await fetch(`https://api.clickup.com/api/v3/workspaces/${CONFIG.teamId}/docs/${docId}/pages`, {
+          if (parent_page_id) {
+            pageRequestBody.parent_page_id = parent_page_id;
+          }
+
+          const response = await fetch(`https://api.clickup.com/api/v3/workspaces/${CONFIG.teamId}/docs/${doc_id}/pages`, {
             method: 'POST',
             headers: {
               Authorization: CONFIG.apiKey,
@@ -383,64 +458,35 @@ export function registerDocumentToolsWrite(server: McpServer) {
           });
 
           if (!response.ok) {
-            throw new Error(`Error creating page: ${response.status} ${response.statusText}`);
+            const errorText = await response.text();
+            throw new Error(`Error creating page: ${response.status} ${response.statusText}. ${errorText}`);
           }
 
           const data = await response.json();
-          const newPage = data.page || data; // Handle both nested and flat response formats
+          const newPage = data.page || data;
+
+          const pageType = parent_page_id ? "sub-page" : "page";
+          const parentInfo = parent_page_id ? ` under parent page ${parent_page_id}` : "";
 
           return {
-            content: [{ 
-              type: "text", 
-              text: `✅ Successfully created page "${newPage.name}" (${newPage.id}) in document\n\nPage URL: ${generateDocumentUrl(docId, newPage.id)}`
-            }],
-          };
-
-        } else if (parent_type === "page") {
-          // Create sub-page under existing page
-          const pageRequestBody = {
-            name: page_name,
-            content: content || '',
-            parent_page_id: parent_id
-          };
-
-          // For sub-pages, we need to get the doc_id from the parent page first
-          // This is a limitation we'll need to handle - for now, use a generic endpoint
-          const response = await fetch(`https://api.clickup.com/api/v3/docs/pages`, {
-            method: 'POST',
-            headers: {
-              Authorization: CONFIG.apiKey,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(pageRequestBody),
-          });
-
-          if (!response.ok) {
-            throw new Error(`Error creating sub-page: ${response.status} ${response.statusText}`);
-          }
-
-          const data = await response.json();
-          const newPage = data.page || data; // Handle both nested and flat response formats
-
-          return {
-            content: [{ 
-              type: "text", 
-              text: `✅ Successfully created sub-page "${newPage.name}" (${newPage.id}) under parent page ${parent_id}\n\nPage URL: ${generateDocumentUrl(newPage.doc_id, newPage.id)}`
+            content: [{
+              type: "text",
+              text: `✅ Successfully created ${pageType} "${newPage.name}" (page_id: ${newPage.id})${parentInfo}\n\nPage URL: ${generateDocumentUrl(doc_id, newPage.id)}`
             }],
           };
         }
 
         return {
-          content: [{ type: "text", text: "Error: Invalid parent_type specified." }],
+          content: [{ type: "text", text: "Error: Unexpected state in document/page creation." }],
         };
 
       } catch (error) {
-        console.error('Error in writeDocument:', error);
+        console.error('Error creating document or page:', error);
         return {
           content: [
             {
               type: "text",
-              text: `Error in document/page operation: ${error instanceof Error ? error.message : 'Unknown error'}`,
+              text: `Error creating document or page: ${error instanceof Error ? error.message : 'Unknown error'}`,
             },
           ],
         };
