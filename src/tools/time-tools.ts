@@ -2,7 +2,6 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { CONFIG } from "../shared/config";
 import { getAllTeamMembers } from "../shared/utils";
-import { clearTimeEntriesCache } from "./search-tools";
 
 /**
  * Converts ISO date string to Unix timestamp in milliseconds
@@ -368,9 +367,6 @@ export function registerTimeToolsWrite(server: McpServer) {
         }
 
         const timeEntry = await response.json();
-
-        // Clear time entries cache to ensure fresh data on next search
-        clearTimeEntriesCache();
 
         // Format duration for display
         const displayHours = Math.floor(hours);

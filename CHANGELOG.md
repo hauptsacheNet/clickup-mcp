@@ -7,8 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-- Add per-list caching for time entries in `searchTasks` to prevent rate limit issues on repeated searches (60-second cache with automatic invalidation after time entry creation)
+### Changed
+- Removed time entries from `searchTasks` results to improve reliability and prevent rate limit issues. Time entries are still available via `getTaskById` for individual tasks.
 
 ## [1.4.3] - 2025-09-26
 
