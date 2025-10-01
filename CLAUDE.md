@@ -4,9 +4,9 @@
 - Cache promises, not results, to prevent race conditions when multiple concurrent calls happen before the first completes (see getAllTeamMembers, getCurrentUser, getTaskSearchIndex, getSpaceSearchIndex patterns).
 - Use "npm run build" to compile the typescript for validation.
 - Use "npm run cli" to test mcp calls.
+- Use "npm run test" to run tests.
 - Use console.error to prevent writing log messages to stdout.
 - MCPB manifest.json spec is at https://github.com/anthropics/mcpb/blob/main/README.md - update tools section when adding new MCP tools.
 - Update the CHANGELOG.md when changing or implementing a new feature.
 - Backwards compatibility does not matter, an LLM will understand new parameters.
 - Mention ID's, not just names, when outputting references. for example "User: Username (user_id: 12345)"
-- You can use ClickUp List 4500611 (Marco Test) to test new mcp calls. (even destructive update calls)

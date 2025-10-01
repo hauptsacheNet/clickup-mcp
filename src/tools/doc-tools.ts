@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { CONFIG } from "../shared/config";
-import { generateDocumentUrl, getDocumentSearchIndex, performMultiTermSearch } from "../shared/utils";
+import { generateDocumentUrl } from "../shared/utils";
 
 /**
  * Helper function to recursively extract all pages from nested page structure
@@ -55,6 +55,7 @@ export function registerDocumentToolsRead(server: McpServer) {
     "readDocument",
     [
       "Get a ClickUp document with page structure and content.",
+      "Documents can be discovered via searchSpaces (which includes documents in space tree) or by direct URL from the user or within tasks.",
       "Always use the document URL when referencing documents in conversations or sharing with others.",
       "The response provides complete document metadata, page structure, and requested page content.",
       `Document URLs look like this: ${generateDocumentUrl('doc_id', 'page_id')}`,
@@ -197,132 +198,6 @@ export function registerDocumentToolsRead(server: McpServer) {
             {
               type: "text",
               text: `Error reading document ${doc_id}: ${error instanceof Error ? error.message : 'Unknown error'}`,
-            },
-          ],
-        };
-      }
-    }
-  );
-
-  // Dynamically construct the searchDocuments description
-  const searchDocumentsDescriptionBase = [
-    "Search documents by name and space with fuzzy matching and support for multiple search terms (OR logic).",
-    "This can be a great knowledge based for general project information. Consider searching for documents and for tasks at the same time.",
-    "Can filter by specific space_ids. If no search terms provided, returns most recently updated documents."
-  ];
-
-  if (CONFIG.primaryLanguageHint && CONFIG.primaryLanguageHint.toLowerCase() !== 'en') {
-    searchDocumentsDescriptionBase.push(`For optimal results, as your ClickUp documents may be primarily in '${CONFIG.primaryLanguageHint}', consider providing search terms in English and '${CONFIG.primaryLanguageHint}'.`);
-  }
-
-  searchDocumentsDescriptionBase.push("Always reference documents by their URLs when discussing search results or suggesting actions.");
-  searchDocumentsDescriptionBase.push("You'll get document overview with space context - use readDocument to get full content.");
-
-  server.tool(
-    "searchDocuments",
-    searchDocumentsDescriptionBase.join("\n"),
-    {
-      terms: z
-        .array(z.string())
-        .optional()
-        .describe("Array of search terms to match against document names and spaces. If not provided, returns most recent documents."),
-      space_ids: z
-        .array(z.string())
-        .optional()
-        .describe("Filter documents to specific space IDs")
-    },
-    {
-      readOnlyHint: true
-    },
-    async ({ terms, space_ids }) => {
-      try {
-        // Get the document search index
-        const searchIndex = await getDocumentSearchIndex(space_ids);
-        if (!searchIndex) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: "Unable to create document search index.",
-              },
-            ],
-          };
-        }
-
-        let results: any[];
-        if (terms && terms.length > 0) {
-          // Perform multi-term search
-          results = await performMultiTermSearch(searchIndex, terms);
-        } else {
-          // Return all documents sorted by creation date (most recent first)
-          const allResults = (searchIndex as any)._docs || [];
-          results = allResults
-            .sort((a: any, b: any) =>
-              new Date(b.date_created || 0).getTime() - new Date(a.date_created || 0).getTime()
-            );
-        }
-
-        // Limit results to prevent overwhelming the LLM
-        const limitedResults = results.slice(0, 50);
-
-        if (limitedResults.length === 0) {
-          const searchTermsText = terms && terms.length > 0 ? ` for terms: ${terms.join(", ")}` : "";
-          const spaceFilterText = space_ids && space_ids.length > 0 ? ` in spaces: ${space_ids.join(", ")}` : "";
-          return {
-            content: [
-              {
-                type: "text",
-                text: [
-                  `No documents found${searchTermsText}${spaceFilterText}.`,
-                  `The content of documents is not searched, so ask the user for more details if needed.`,
-                ].join("\n"),
-              },
-            ],
-          };
-        }
-
-        // Format results
-        const responseLines = [
-          `Found ${limitedResults.length} document${limitedResults.length === 1 ? "" : "s"}:`
-        ];
-
-        limitedResults.forEach((doc: any, index: number) => {
-          const docUrl = generateDocumentUrl(doc.id);
-          const createdDate = doc.date_created ? new Date(+doc.date_created).toLocaleDateString() : 'Unknown';
-          const meta: string[] = [`doc_id ${doc.id}`];
-
-          // Show parent information
-          if (doc.parent_info) {
-            meta.push(doc.parent_info);
-          }
-
-          meta.push(`Created: ${createdDate}`);
-          responseLines.push(
-            `- ${doc.name} (${meta.join(', ')}) ${docUrl}`
-          );
-        });
-
-        responseLines.push(
-          "",
-          "Use `readDocument` with a document ID to view full content and page structure."
-        );
-
-        return {
-          content: [
-            {
-              type: "text",
-              text: responseLines.join("\n"),
-            },
-          ],
-        };
-
-      } catch (error) {
-        console.error('Error searching documents:', error);
-        return {
-          content: [
-            {
-              type: "text",
-              text: `Error searching documents: ${error instanceof Error ? error.message : 'Unknown error'}`,
             },
           ],
         };

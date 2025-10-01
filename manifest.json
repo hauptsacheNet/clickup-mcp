@@ -71,10 +71,6 @@
       "description": "Get a ClickUp document with page structure and content. Supports reading specific pages and provides complete document metadata with navigation."
     },
     {
-      "name": "searchDocuments",
-      "description": "Search documents by name and space with fuzzy matching and support for multiple search terms (OR logic). Can filter by specific space_ids and provides document overview with space context."
-    },
-    {
       "name": "writeDocument",
       "description": "Universal tool for document and page operations with smart document creation. Create new documents, pages, sub-pages, or update existing pages with append mode support for adding content without overwriting."
     }
