@@ -25,6 +25,7 @@
       }
     }
   },
+  "prompts_generated": true,
   "tools": [
     {
       "name": "getTaskById",

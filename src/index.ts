@@ -60,10 +60,9 @@ async function initializeServer() {
     "my-todos",
     {
       title: lang === 'de' ? "Meine TODOs" : "My TODOs",
-      description: lang === 'de' 
+      description: lang === 'de'
         ? "Meine aktuellen TODO-Aufgaben aus ClickUp abrufen und nach Priorität kategorisiert analysieren"
-        : "Get and analyze my current TODO tasks from ClickUp, categorized by priority",
-      argsSchema: {}
+        : "Get and analyze my current TODO tasks from ClickUp, categorized by priority"
     },
     () => {
       const messages = [{
