@@ -135,7 +135,9 @@ export function registerListToolsWrite(server: McpServer) {
       append_description: z.string().min(1).describe("Markdown content to APPEND to existing list description (preserves existing content for safety)")
     },
     {
-      readOnlyHint: false
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
     },
     async ({ list_id, append_description }) => {
       try {

@@ -38,7 +38,9 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
       comment: z.string().min(1).describe("The comment text to add to the task"),
     },
     {
-      readOnlyHint: false
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
     },
     async ({ task_id, comment }) => {
       try {
@@ -132,7 +134,10 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
       linked_tasks: z.array(z.string()).optional().describe("Optional array of task IDs to link as related tasks without blocking (will replace existing linked tasks)")
     },
     {
-      readOnlyHint: false
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: true
     },
     async ({ task_id, name, append_description, status, priority, due_date, start_date, time_estimate, tags, parent_task_id, assignees, blocking, waiting_on, linked_tasks }) => {
       try {
@@ -348,7 +353,10 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
       assignees: z.array(z.string()).optional().describe(createAssigneeDescription(userData))
     },
     {
-      readOnlyHint: false
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true
     },
     async ({ list_id, name, description, status, priority, due_date, start_date, time_estimate, tags, parent_task_id, assignees }) => {
       try {

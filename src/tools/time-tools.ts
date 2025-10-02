@@ -335,7 +335,9 @@ export function registerTimeToolsWrite(server: McpServer) {
       start_time: z.string().optional().describe("Optional start time as ISO date string (e.g., '2024-10-06T09:00:00+02:00', defaults to current time)")
     },
     {
-      readOnlyHint: false
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
     },
     async ({ task_id, hours, description, start_time }) => {
       try {

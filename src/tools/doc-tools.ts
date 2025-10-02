@@ -238,7 +238,9 @@ export function registerDocumentToolsWrite(server: McpServer) {
         .describe("Whether to append content to existing page content (default: false - replaces content)")
     },
     {
-      readOnlyHint: false
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
     },
     async ({ doc_id, page_id, name, content, append = false }) => {
       try {
@@ -350,7 +352,10 @@ export function registerDocumentToolsWrite(server: McpServer) {
         .describe("Optional: page content in markdown format")
     },
     {
-      readOnlyHint: false
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true
     },
     async ({ space_id, list_id, doc_id, parent_page_id, name, content }) => {
       try {
