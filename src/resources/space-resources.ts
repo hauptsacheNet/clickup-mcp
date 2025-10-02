@@ -37,8 +37,8 @@ export function registerSpaceResources(server: McpServer) {
           return {
             resources: activeSpaces.map((space: any) => ({
               uri: `clickup://space/${space.id}`,
-              name: space.name,
-              title: space.name,
+              name: `${space.name} ClickUp Space.txt`,
+              title: `${space.name} ClickUp Space`,
               mimeType: "text/plain"
             }))
           };
