@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { processClickUpMarkdown, processClickUpText } from "../clickup-text";
+import { convertMarkdownToToolCallResult, convertClickUpTextItemsToToolCallResult } from "../clickup-text";
 import { ContentBlock, DatedContentEvent, ImageMetadataBlock } from "../shared/types";
 import { CONFIG } from "../shared/config";
 import { isTaskId, getSpaceDetails, getAllTeamMembers } from "../shared/utils";
@@ -117,7 +117,7 @@ async function loadTaskContent(taskId: string): Promise<(ContentBlock | ImageMet
       return await generateTaskMetadata(task, timeEntries, true);
     })(),
     // process markdown and download images
-    processClickUpMarkdown(
+    convertMarkdownToToolCallResult(
       task.markdown_description || "",
       task.attachments || []
     ),
@@ -147,7 +147,7 @@ async function loadTaskComments(id: string): Promise<DatedContentEvent[]> {
         text: `Comment by ${comment.user.username} on ${timestampToIso(comment.date)}:`,
       };
 
-      const commentBodyBlocks: (ContentBlock | ImageMetadataBlock)[] = await processClickUpText(comment.comment);
+      const commentBodyBlocks: (ContentBlock | ImageMetadataBlock)[] = await convertClickUpTextItemsToToolCallResult(comment.comment);
 
       return {
         date: comment.date, // String timestamp from ClickUp for sorting

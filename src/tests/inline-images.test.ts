@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { processClickUpMarkdown, processClickUpText } from '../clickup-text';
+import { convertMarkdownToToolCallResult, convertClickUpTextItemsToToolCallResult } from '../clickup-text';
 import { ImageMetadataBlock } from '../shared/types';
 
 const SAMPLE_DATA_URI = 'data:image/png;base64,QUJD';
@@ -13,9 +13,9 @@ function isImageMetadataBlock(block: any): block is ImageMetadataBlock {
   return block && block.type === 'image_metadata';
 }
 
-test('processClickUpMarkdown strips inline data URIs from text output', async () => {
+test('convertMarkdownToToolCallResult strips inline data URIs from text output', async () => {
   const markdown = `Intro text.\n![](${SAMPLE_DATA_URI})\nOutro text.`;
-  const blocks = processClickUpMarkdown(markdown, []);
+  const blocks = convertMarkdownToToolCallResult(markdown, []);
 
   const textBlocks = blocks.filter(isTextBlock);
   assert.ok(textBlocks.length >= 1, 'Expected at least one text block');
@@ -33,8 +33,8 @@ test('processClickUpMarkdown strips inline data URIs from text output', async ()
   assert.equal(imageMetadata.inlineData?.base64Data, 'QUJD');
 });
 
-test('processClickUpText handles inline data URIs without leaking base64 into text', async () => {
-  const blocks = await processClickUpText([
+test('convertClickUpTextItemsToToolCallResult handles inline data URIs without leaking base64 into text', async () => {
+  const blocks = await convertClickUpTextItemsToToolCallResult([
     { text: 'Before image ' },
     {
       type: 'image',

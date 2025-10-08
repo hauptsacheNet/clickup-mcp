@@ -42,10 +42,14 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.15.1",
     "fuse.js": "^7.1.0",
+    "remark-gfm": "^4.0.1",
+    "remark-parse": "^11.0.0",
+    "unified": "^11.0.5",
     "zod": "^3.24.2"
   },
   "devDependencies": {
     "@anthropic-ai/mcpb": "^1.1.1",
+    "@types/mdast": "^4.0.4",
     "@types/node": "^22.14.1",
     "dotenv": "^16.5.0",
     "nodemon": "^3.1.9",

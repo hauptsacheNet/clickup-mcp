@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { CONFIG } from "../shared/config";
 import { getCurrentUser } from "../shared/utils";
+import { convertMarkdownToClickUpBlocks } from "../clickup-text";
 
 // Shared schemas for task parameters
 const taskNameSchema = z.string().min(1).describe("The name/title of the task");
@@ -44,8 +45,11 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
     },
     async ({ task_id, comment }) => {
       try {
+        // Convert markdown to ClickUp formatted blocks
+        const commentBlocks = convertMarkdownToClickUpBlocks(comment);
+
         const requestBody = {
-          comment_text: comment,
+          comment: commentBlocks,
           notify_all: true
         };
 

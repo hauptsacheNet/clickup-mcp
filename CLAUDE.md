@@ -4,6 +4,7 @@
 - Cache promises, not results, to prevent race conditions when multiple concurrent calls happen before the first completes (see getAllTeamMembers, getCurrentUser, getTaskSearchIndex, getSpaceSearchIndex patterns).
 - Use "npm run build" to compile the typescript for validation.
 - Use "npm run cli" to test mcp calls.
+- CLI syntax: npm run cli <tool> key=value key2="\"quoted string\"" arrayKey='["item1","item2"]' objectKey='{"field":"value"}'
 - Use "npm run test" to run tests.
 - Use console.error to prevent writing log messages to stdout.
 - MCPB manifest.json spec is at https://github.com/anthropics/mcpb/blob/main/README.md - update tools section when adding new MCP tools.
