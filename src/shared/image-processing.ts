@@ -2,6 +2,7 @@ import {ContentBlock, ImageMetadataBlock} from "./types";
 import {CONFIG} from "./config";
 import { estimateBase64Size } from "./data-uri";
 import { Buffer } from "buffer";
+import path from "node:path";
 
 /**
  * Downloads images from image_metadata blocks and applies smart size/count limiting
@@ -65,10 +66,7 @@ function applyCountBasedLimitToImageMetadata(content: (ContentBlock | ImageMetad
   // Create a new content array with excess image_metadata blocks replaced by text placeholders
   return content.map((block, index) => {
     if (block.type === "image_metadata" && imagesToRemove.includes(index)) {
-      return {
-        type: "text" as const,
-        text: "[Image removed due to count limitations. Only the most recent images are shown.]",
-      };
+      return createImageFallback(block);
     }
     return block;
   });
@@ -141,9 +139,25 @@ async function downloadSingleImage(imageMetadata: ImageMetadataBlock, perImageBu
  * Create a fallback text block when an image cannot be included
  */
 function createImageFallback(imageMetadata: ImageMetadataBlock): ContentBlock {
+  if (!imageMetadata.urls[0]) {
+    return {
+      type: "text" as const,
+      text: imageMetadata.alt
+        ? `[Image unavailable: ${imageMetadata.alt}]`
+        : "[Image unavailable]",
+    };
+  }
+
   return {
-    type: "text" as const,
-    text: `[Image "${imageMetadata.alt}" removed due to size limitations.]`,
+    type: "resource_link" as const,
+    uri: imageMetadata.urls[0],
+    name: path.basename(imageMetadata.urls[0]),
+    description: imageMetadata.alt,
+    mimeType: `image/${path.extname(imageMetadata.urls[0])}`,
+    annotations: {
+      audience: ['assistent'],
+      priority: 0.9,
+    }
   };
 }
 

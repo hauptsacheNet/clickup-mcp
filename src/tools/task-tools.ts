@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { convertMarkdownToToolCallResult, convertClickUpTextItemsToToolCallResult } from "../clickup-text";
+import { convertMarkdownToToolCallResult, convertClickUpTextItemsToToolCallResult, extractFileNameFromUrl, extractFileTypeFromUrl, getMimeType } from "../clickup-text";
 import { ContentBlock, DatedContentEvent, ImageMetadataBlock } from "../shared/types";
 import { CONFIG } from "../shared/config";
 import { isTaskId, getSpaceDetails, getAllTeamMembers } from "../shared/utils";
@@ -32,10 +32,13 @@ export function registerTaskToolsRead(server: McpServer, userData: any) {
       readOnlyHint: true
     },
     async ({ id }) => {
-      // 1. Load base task content, comment events, and status change events in parallel
-      const [taskDetailContentBlocks, commentEvents, statusChangeEvents] = await Promise.all([
-        loadTaskContent(id), // Returns Promise<ContentBlock[]>
-        loadTaskComments(id), // Returns Promise<DatedContentEvent[]>
+      // 1. Load base task content first to get attachments
+      const taskContentResult = await loadTaskContent(id);
+      const { contentBlocks: taskDetailContentBlocks, task } = taskContentResult;
+
+      // 2. Load comment events and status change events in parallel, passing attachments to comments
+      const [commentEvents, statusChangeEvents] = await Promise.all([
+        loadTaskComments(id, task.attachments || []), // Returns Promise<DatedContentEvent[]>
         loadTimeInStatusHistory(id), // Returns Promise<DatedContentEvent[]>
       ]);
 
@@ -55,10 +58,92 @@ export function registerTaskToolsRead(server: McpServer, userData: any) {
         processedEventBlocks.push(...event.contentBlocks);
       }
 
-      // 5. Combine task details with processed event blocks
-      const allContentBlocks: (ContentBlock | ImageMetadataBlock)[] = [...taskDetailContentBlocks, ...processedEventBlocks];
+      // 5. Process unreferenced attachments
+      const attachmentBlocks: (ContentBlock | ImageMetadataBlock)[] = [];
 
-      // 6. Download images with smart size limiting
+      // Collect all image URLs used in description and comments
+      const usedImageUrls = new Set<string>();
+
+      // Scan description for markdown images and links
+      const markdownText = task.markdown_description || "";
+      const imageMatches = markdownText.matchAll(/!\[([^\]]*)\]\(([^\)]+)\)/g);
+      for (const match of imageMatches) {
+        usedImageUrls.add(match[2]);
+      }
+
+      // Also scan for markdown links to catch file references
+      const linkMatches = markdownText.matchAll(/\[([^\]]*)\]\(([^\)]+)\)/g);
+      for (const match of linkMatches) {
+        usedImageUrls.add(match[2]);
+      }
+
+      // Scan all content blocks (description + comments) for image_metadata blocks
+      const allBlocks = [...taskDetailContentBlocks, ...processedEventBlocks];
+      for (const block of allBlocks) {
+        if ('type' in block && block.type === 'image_metadata') {
+          // Add all URLs from image_metadata blocks
+          if ('urls' in block && Array.isArray(block.urls)) {
+            block.urls.forEach(url => usedImageUrls.add(url));
+          }
+        }
+      }
+
+      // Add unreferenced attachments as resource_links
+      if (task.attachments && Array.isArray(task.attachments)) {
+        const unreferencedAttachments = task.attachments.filter((attachment: any) => {
+          // Check if attachment URL or any of its thumbnails are used
+          if (usedImageUrls.has(attachment.url)) return false;
+          if (attachment.thumbnail_large && usedImageUrls.has(attachment.thumbnail_large)) return false;
+          if (attachment.thumbnail_medium && usedImageUrls.has(attachment.thumbnail_medium)) return false;
+          if (attachment.thumbnail_small && usedImageUrls.has(attachment.thumbnail_small)) return false;
+          return true;
+        });
+
+        if (unreferencedAttachments.length > 0) {
+          // Add header for attachments section
+          attachmentBlocks.push({
+            type: "text" as const,
+            text: "\n## Attachments",
+          });
+
+          for (const attachment of unreferencedAttachments) {
+            // Determine if this is an image based on URL or type
+            const isImage = attachment.thumbnail_large ||
+              /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(attachment.url);
+
+            const fileName = extractFileNameFromUrl(attachment.url) || (isImage ? "image" : "file");
+            const fileType = extractFileTypeFromUrl(attachment.url);
+
+            // Determine the best URL to use (prefer thumbnails for images)
+            let resourceUrl = attachment.url;
+            if (isImage && (attachment.thumbnail_large || attachment.thumbnail_medium || attachment.thumbnail_small)) {
+              resourceUrl = (attachment.thumbnail_large || attachment.thumbnail_medium || attachment.thumbnail_small) as string;
+            }
+
+            // Create resource_link block for all unreferenced attachments
+            attachmentBlocks.push({
+              type: "resource_link" as const,
+              uri: resourceUrl,
+              name: fileName,
+              description: isImage ? "Image attachment" : (fileType ? `${fileType.toUpperCase()} file` : "File attachment"),
+              mimeType: getMimeType(attachment.url),
+              annotations: {
+                audience: ['assistant'],
+                priority: 0.3,
+              }
+            });
+          }
+        }
+      }
+
+      // 6. Combine task details, attachments, and event blocks
+      const allContentBlocks: (ContentBlock | ImageMetadataBlock)[] = [
+        ...taskDetailContentBlocks,
+        ...attachmentBlocks,
+        ...processedEventBlocks
+      ];
+
+      // 7. Download images with smart size limiting
       const limitedContent: ContentBlock[] = await downloadImages(allContentBlocks);
 
       return {
@@ -103,7 +188,10 @@ async function fetchTaskTimeEntries(taskId: string): Promise<any[]> {
   }
 }
 
-async function loadTaskContent(taskId: string): Promise<(ContentBlock | ImageMetadataBlock)[]> {
+async function loadTaskContent(taskId: string): Promise<{
+  contentBlocks: (ContentBlock | ImageMetadataBlock)[],
+  task: any
+}> {
   const response = await fetch(
     `https://api.clickup.com/api/v2/task/${taskId}?include_markdown_description=true&include_subtasks=true`,
     { headers: { Authorization: CONFIG.apiKey } }
@@ -123,10 +211,13 @@ async function loadTaskContent(taskId: string): Promise<(ContentBlock | ImageMet
     ),
   ]);
 
-  return [taskMetadata, ...content];
+  return {
+    contentBlocks: [taskMetadata, ...content],
+    task
+  };
 }
 
-async function loadTaskComments(id: string): Promise<DatedContentEvent[]> {
+async function loadTaskComments(id: string, attachments: any[]): Promise<DatedContentEvent[]> {
   const response = await fetch(
     `https://api.clickup.com/api/v2/task/${id}/comment?start_date=0`, // Ensure all comments are fetched
     { headers: { Authorization: CONFIG.apiKey } }
@@ -147,7 +238,7 @@ async function loadTaskComments(id: string): Promise<DatedContentEvent[]> {
         text: `Comment by ${comment.user.username} on ${timestampToIso(comment.date)}:`,
       };
 
-      const commentBodyBlocks: (ContentBlock | ImageMetadataBlock)[] = await convertClickUpTextItemsToToolCallResult(comment.comment);
+      const commentBodyBlocks: (ContentBlock | ImageMetadataBlock)[] = await convertClickUpTextItemsToToolCallResult(comment.comment, attachments);
 
       return {
         date: comment.date, // String timestamp from ClickUp for sorting

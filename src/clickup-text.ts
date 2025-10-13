@@ -6,6 +6,7 @@ import { unified } from 'unified';
 import remarkParse from 'remark-parse';
 import remarkGfm from 'remark-gfm';
 import type { Root, PhrasingContent, Link, Text, Content, Heading, Paragraph, Blockquote, List, ListItem, Code } from 'mdast';
+import path from "node:path";
 
 /**
  * Represents a ClickUp text item which can be plain text or an image
@@ -70,10 +71,12 @@ function extractThumbnailsFromDataAttachment(attributes?: any): {
  * that includes both text and images in their original sequence
  *
  * @param textItems Array of text items from ClickUp API
+ * @param attachments Array of attachments from the Clickup API
  * @returns Promise resolving to an array of content blocks (text and images)
  */
 export async function convertClickUpTextItemsToToolCallResult(
-  textItems: ClickUpTextItem[]
+  textItems: ClickUpTextItem[],
+  attachments: ClickUpAttachment[] | null | undefined = null
 ): Promise<(CallToolResult["content"][number] | ImageMetadataBlock)[]> {
   const contentBlocks: (CallToolResult["content"][number] | ImageMetadataBlock)[] = [];
   let currentTextBlock = "";
@@ -95,7 +98,6 @@ export async function convertClickUpTextItemsToToolCallResult(
 
       if (imageUrl.startsWith("data:")) {
         const parsedData = parseDataUri(imageUrl);
-        currentTextBlock += `\nImage: ${imageFileName} - [inline image data]`;
 
         if (currentTextBlock.trim()) {
           contentBlocks.push({
@@ -122,9 +124,6 @@ export async function convertClickUpTextItemsToToolCallResult(
         }
         continue;
       }
-
-      // Add image URL reference inline to current text block
-      currentTextBlock += `\nImage: ${imageFileName} - ${imageUrl}`;
 
       // Get working thumbnail URLs from data-attachment if available
       const extractedThumbnails = extractThumbnailsFromDataAttachment(item.attributes);
@@ -287,6 +286,60 @@ export async function convertClickUpTextItemsToToolCallResult(
     });
   }
 
+  // Process markdown links in all text blocks to create resource_link blocks for attachments
+  // This ensures files are both readable in text AND exposed as downloadable resources
+  if (attachments && Array.isArray(attachments)) {
+    // Create a map of attachment URLs to their full info for easy lookup
+    const attachmentMap = new Map<string, ClickUpAttachment>();
+    for (const attachment of attachments) {
+      attachmentMap.set(attachment.url, attachment);
+    }
+
+    // Collect all text content to scan for links
+    let allTextContent = "";
+    for (const block of contentBlocks) {
+      if ('type' in block && block.type === 'text' && 'text' in block) {
+        allTextContent += block.text + "\n";
+      }
+    }
+
+    // Scan for markdown links (excluding images with negative lookbehind)
+    const linkMatches = allTextContent.matchAll(/(?<!!)\[([^\]]*)\]\(([^\)]+)\)/g);
+    for (const match of linkMatches) {
+      const [_, linkText, linkUrl] = match;
+
+      // Check if this link points to an attachment
+      const attachment = attachmentMap.get(linkUrl);
+      if (attachment) {
+        // Determine if this is an image based on URL or type
+        const isImage = attachment.thumbnail_large ||
+          /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(attachment.url);
+
+        const fileName = extractFileNameFromUrl(attachment.url) || linkText || (isImage ? "image" : "file");
+        const fileType = extractFileTypeFromUrl(attachment.url);
+
+        // Determine the best URL to use (prefer thumbnails for images)
+        let resourceUrl = attachment.url;
+        if (isImage && (attachment.thumbnail_large || attachment.thumbnail_medium || attachment.thumbnail_small)) {
+          resourceUrl = (attachment.thumbnail_large || attachment.thumbnail_medium || attachment.thumbnail_small) as string;
+        }
+
+        // Create resource_link block for the linked attachment
+        contentBlocks.push({
+          type: "resource_link" as const,
+          uri: resourceUrl,
+          name: fileName,
+          description: linkText || (isImage ? "Image attachment" : (fileType ? `${fileType.toUpperCase()} file` : "File attachment")),
+          mimeType: getMimeType(attachment.url),
+          annotations: {
+            audience: ['assistant'],
+            priority: 0.5, // Medium priority for linked files
+          }
+        });
+      }
+    }
+  }
+
   return contentBlocks;
 }
 
@@ -323,31 +376,28 @@ export function convertMarkdownToToolCallResult(
     currentTextBlock += markdownText.substring(lastIndex, match.index);
 
     if (imageUrl.startsWith("data:")) {
-      const imageFileName = altText || "image";
       const parsedData = parseDataUri(imageUrl);
-      currentTextBlock += `\nImage: ${imageFileName} - [inline image data]`;
 
       if (currentTextBlock.trim()) {
         contentBlocks.push({
           type: "text" as const,
           text: currentTextBlock.trim(),
         });
+        currentTextBlock = "";
       }
-
-      currentTextBlock = "";
 
       if (parsedData) {
         contentBlocks.push({
           type: "image_metadata",
           urls: [],
-          alt: altText || imageFileName,
+          alt: altText || "inline image",
           inlineData: parsedData,
         });
       } else {
-        console.error(`Unable to parse inline image data for ${imageFileName}`);
+        console.error(`Unable to parse inline image data for ${altText || "inline image"}`);
         contentBlocks.push({
           type: "text" as const,
-          text: `[Image "${altText || imageFileName}" omitted: unsupported inline data URI]`,
+          text: `[Image "${altText || "inline image"}" omitted: unsupported inline data URI]`,
         });
       }
 
@@ -355,78 +405,59 @@ export function convertMarkdownToToolCallResult(
       continue;
     }
 
-    // Check if this image URL exists in our attachments
+    // Check if this file URL exists in our attachments
     const attachment = attachmentMap.get(imageUrl);
     if (attachment) {
-      // Add image URL reference inline to current text block
-      const imageFileName = altText || "image";
-      currentTextBlock += `\nImage: ${imageFileName} - ${imageUrl}`;
+      // Push accumulated text (including image URL) as a text block
+      if (currentTextBlock.trim()) {
+        contentBlocks.push({
+          type: "text" as const,
+          text: currentTextBlock.trim(),
+        });
+        currentTextBlock = "";
+      }
 
       // Only create image_metadata if we have at least one thumbnail (never use original image)
-      if (attachment.thumbnail_large || attachment.thumbnail_medium || attachment.thumbnail_small) {
-        // Push accumulated text (including image URL) as a text block
-        if (currentTextBlock.trim()) {
-          contentBlocks.push({
-            type: "text" as const,
-            text: currentTextBlock.trim(),
-          });
-        }
-
-        // Reset current text block after pushing it
-        currentTextBlock = "";
-
-        // Create URLs array with largest to smallest preference, filter out undefined
-        const urls = [attachment.thumbnail_large, attachment.thumbnail_medium, attachment.thumbnail_small].filter(Boolean) as string[];
-
+      // Create URLs array with largest to smallest preference, filter out undefined
+      const thumbnails = [attachment.thumbnail_large, attachment.thumbnail_medium, attachment.thumbnail_small].filter(Boolean) as string[];
+      if (thumbnails.length > 0) {
         // Add image_metadata block for lazy loading
         contentBlocks.push({
           type: "image_metadata",
-          urls: urls,
-          alt: altText || imageFileName,
+          urls: thumbnails,
+          alt: altText || path.basename(imageUrl),
+        });
+      } else {
+        // No thumbnails available - create resource_link instead
+        contentBlocks.push({
+          type: "resource_link" as const,
+          uri: imageUrl,
+          name: path.basename(imageUrl),
+          description: altText,
+          mimeType: getMimeType(imageUrl),
+          annotations: {
+            audience: ['assistant'],
+            priority: 0.9,
+          }
         });
       }
-      // If no thumbnails, just treat as a file reference (already added to currentTextBlock)
-    } else {
-      // If the image URL doesn't match any attachment, keep the original markdown in the current text block
-      currentTextBlock += fullMatch;
-      console.error(
-        `Image URL ${imageUrl} not found in attachments`,
-        attachmentMap
-      );
+
+      lastIndex = match.index + fullMatch.length;
+      continue;
     }
+
+    // If the image URL doesn't match any attachment, keep the original markdown in the current text block
+    currentTextBlock += fullMatch;
+    console.error(
+      `Image URL ${imageUrl} not found in attachments`,
+      attachmentMap
+    );
 
     lastIndex = match.index + fullMatch.length;
   }
 
   // Add any remaining text after the last image
   currentTextBlock += markdownText.substring(lastIndex);
-
-  // Process non-image attachments that weren't referenced in markdown
-  const referencedUrls = new Set<string>();
-  const imageMatches = markdownText.matchAll(/!\[([^\]]*)\]\(([^\)]+)\)/g);
-  for (const match of imageMatches) {
-    referencedUrls.add(match[2]);
-  }
-
-  // Add non-image files inline to the current text block
-  if (attachments && Array.isArray(attachments)) {
-    for (const attachment of attachments) {
-      if (!referencedUrls.has(attachment.url)) {
-        // Determine if this is an image based on URL or type
-        const isImage = attachment.thumbnail_large || 
-          /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(attachment.url);
-        
-        if (!isImage) {
-          // This is a non-image file - add inline to current text block
-          const fileName = extractFileNameFromUrl(attachment.url) || "file";
-          const fileType = extractFileTypeFromUrl(attachment.url);
-          const fileTypeText = fileType ? ` (${fileType.toUpperCase()})` : "";
-          
-          currentTextBlock += `\nFile: ${fileName}${fileTypeText} - ${attachment.url}`;
-        }
-      }
-    }
-  }
 
   // Add any remaining text (including file references) as final text block
   if (currentTextBlock.trim()) {
@@ -436,6 +467,44 @@ export function convertMarkdownToToolCallResult(
     });
   }
 
+  // Process markdown links to attachments as resource_links (while keeping them in text)
+  // This ensures files are both readable in text AND exposed as downloadable resources
+  // Note: Use negative lookbehind (?<!) to exclude image syntax ![text](url)
+  const linkMatches = markdownText.matchAll(/(?<!!)\[([^\]]*)\]\(([^\)]+)\)/g);
+  for (const match of linkMatches) {
+    const [_, linkText, linkUrl] = match;
+
+    // Check if this link points to an attachment
+    const attachment = attachmentMap.get(linkUrl);
+    if (attachment) {
+      // Determine if this is an image based on URL or type
+      const isImage = attachment.thumbnail_large ||
+        /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(attachment.url);
+
+      const fileName = extractFileNameFromUrl(attachment.url) || linkText || (isImage ? "image" : "file");
+      const fileType = extractFileTypeFromUrl(attachment.url);
+
+      // Determine the best URL to use (prefer thumbnails for images)
+      let resourceUrl = attachment.url;
+      if (isImage && (attachment.thumbnail_large || attachment.thumbnail_medium || attachment.thumbnail_small)) {
+        resourceUrl = (attachment.thumbnail_large || attachment.thumbnail_medium || attachment.thumbnail_small) as string;
+      }
+
+      // Create resource_link block for the linked attachment
+      contentBlocks.push({
+        type: "resource_link" as const,
+        uri: resourceUrl,
+        name: fileName,
+        description: linkText || (isImage ? "Image attachment" : (fileType ? `${fileType.toUpperCase()} file` : "File attachment")),
+        mimeType: getMimeType(attachment.url),
+        annotations: {
+          audience: ['assistant'],
+          priority: 0.5, // Medium priority for linked files
+        }
+      });
+    }
+  }
+
   return contentBlocks;
 }
 
@@ -443,7 +512,7 @@ export function convertMarkdownToToolCallResult(
 /**
  * Extract filename from URL
  */
-function extractFileNameFromUrl(url: string): string | null {
+export function extractFileNameFromUrl(url: string): string | null {
   try {
     const urlObj = new URL(url);
     const pathname = urlObj.pathname;
@@ -457,7 +526,7 @@ function extractFileNameFromUrl(url: string): string | null {
 /**
  * Extract file extension from URL
  */
-function extractFileTypeFromUrl(url: string): string | null {
+export function extractFileTypeFromUrl(url: string): string | null {
   const filename = extractFileNameFromUrl(url);
   if (!filename) return null;
 
@@ -465,6 +534,71 @@ function extractFileTypeFromUrl(url: string): string | null {
   if (lastDot === -1) return null;
 
   return filename.substring(lastDot + 1);
+}
+
+/**
+ * MIME type mapping for common file extensions
+ */
+const MIME_TYPE_MAP: Record<string, string> = {
+  // Images
+  'jpg': 'image/jpeg',
+  'jpeg': 'image/jpeg',
+  'png': 'image/png',
+  'gif': 'image/gif',
+  'webp': 'image/webp',
+  'svg': 'image/svg+xml',
+  'bmp': 'image/bmp',
+  'ico': 'image/x-icon',
+
+  // Documents
+  'pdf': 'application/pdf',
+  'doc': 'application/msword',
+  'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'odt': 'application/vnd.oasis.opendocument.text',
+  'rtf': 'application/rtf',
+  'txt': 'text/plain',
+
+  // Spreadsheets
+  'xls': 'application/vnd.ms-excel',
+  'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'ods': 'application/vnd.oasis.opendocument.spreadsheet',
+  'csv': 'text/csv',
+
+  // Presentations
+  'ppt': 'application/vnd.ms-powerpoint',
+  'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'odp': 'application/vnd.oasis.opendocument.presentation',
+
+  // Archives
+  'zip': 'application/zip',
+  'rar': 'application/vnd.rar',
+  '7z': 'application/x-7z-compressed',
+  'tar': 'application/x-tar',
+  'gz': 'application/gzip',
+
+  // Data formats
+  'json': 'application/json',
+  'xml': 'application/xml',
+  'yaml': 'text/yaml',
+  'yml': 'text/yaml',
+
+  // Other common formats
+  'md': 'text/markdown',
+  'html': 'text/html',
+  'css': 'text/css',
+  'js': 'application/javascript',
+  'ts': 'application/typescript',
+};
+
+/**
+ * Determine MIME type from filename or URL
+ */
+export function getMimeType(url: string): string {
+  const extension = extractFileTypeFromUrl(url);
+  if (!extension) return 'application/octet-stream';
+
+  const lowerExt = extension.toLowerCase();
+  return MIME_TYPE_MAP[lowerExt] || 'application/octet-stream';
 }
 
 /**

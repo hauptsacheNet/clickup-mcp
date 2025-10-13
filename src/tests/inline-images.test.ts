@@ -22,10 +22,6 @@ test('convertMarkdownToToolCallResult strips inline data URIs from text output',
   textBlocks.forEach(block => {
     assert.ok(!block.text.includes('data:image'), 'Text block should not include raw data URI');
   });
-  assert.ok(
-    textBlocks.some(block => block.text.includes('[inline image data]')),
-    'At least one text block should mention inline image placeholder'
-  );
 
   const imageMetadata = blocks.find(isImageMetadataBlock);
   assert.ok(imageMetadata, 'Expected an image_metadata block for inline data');
@@ -45,17 +41,14 @@ test('convertClickUpTextItemsToToolCallResult handles inline data URIs without l
       },
     },
     { text: ' after image.' },
-  ]);
+  ], null);
 
   const textBlocks = blocks.filter(isTextBlock);
   assert.ok(textBlocks.length >= 1, 'Expected text output for inline image comments');
   textBlocks.forEach(block => {
     assert.ok(!block.text.includes('data:image'), 'Text block should not include raw data URI');
+    assert.ok(!block.text.includes('Image:'), 'Text block should not include image mention');
   });
-  assert.ok(
-    textBlocks.some(block => block.text.includes('[inline image data]')),
-    'At least one text block should mention inline image placeholder'
-  );
 
   const imageMetadata = blocks.find(isImageMetadataBlock);
   assert.ok(imageMetadata, 'Expected inline image to produce metadata block');
@@ -119,6 +112,7 @@ test('downloadImages respects max image limit with inline data', async () => {
   assert.equal(imageBlocks.length, 1, 'Should keep only the most recent inline image');
   assert.equal((imageBlocks[0] as any).data, 'BBB');
 
-  const removedPlaceholder = result.find(block => block.type === 'text' && block.text?.includes('Image removed due to count limitations'));
-  assert.ok(removedPlaceholder, 'Older inline image should be replaced with placeholder text');
+  // Inline images without URLs become text fallbacks when removed (can't create resource_links without URLs)
+  const textFallbacks = result.filter(block => block.type === 'text' && block.text?.includes('[Image unavailable'));
+  assert.equal(textFallbacks.length, 1, 'Older inline image should become a text fallback');
 });

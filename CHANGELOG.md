@@ -9,7 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Full markdown support for comments** - `addComment` now converts markdown to ClickUp's rich text format
-- Comments now preserve formatting when reading back from ClickUp, including nested formatting
+- **Resource links for non-image files** - Non-image attachments (PDFs, Excel files, etc.) are now returned as `resource_link` blocks, allowing LLMs to download and analyze them
+
+### Changed
+
+- Images, which are removed due to size or count constraints, are now embedded as resource_links for clients that support it.
+- Comment images now behave identically to description images - they appear only as image blocks without text mentions
+- Comment file links now generate `resource_link` blocks just like description file links, providing dual exposure (markdown link + downloadable resource)
+
+### Fixed
+
+- Fixed duplicate attachment display in `getTaskById` - comment images and description-referenced files are no longer shown twice in the Attachments section
+- Fixed incorrect MIME types for image attachments - now correctly shows `image/png`, `image/jpeg`, etc. instead of `application/octet-stream`
+- Fixed duplicate resource_link blocks for images - markdown image syntax `![](url)` is now properly excluded from link processing using negative lookbehind assertion
+- Files referenced in description/comments are now exposed both as markdown links (for compatibility) and as `resource_link` blocks (for enhanced client support)
 
 ## [1.5.1] - 2025-10-02
 
