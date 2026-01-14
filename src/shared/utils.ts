@@ -5,11 +5,28 @@ const GLOBAL_REFRESH_INTERVAL = 60000; // 60 seconds - that is the rate limit ti
 
 /**
  * Checks if a string looks like a valid ClickUp task ID
- * Valid task IDs are 6-9 characters long and contain only alphanumeric characters
+ * Valid task IDs are either:
+ * - Internal IDs: 6-9 alphanumeric characters (e.g., "86b852ppx")
+ * - Custom IDs: PREFIX-NUMBER format (e.g., "CHIEF-5804")
  */
 export function isTaskId(str: string): boolean {
-  // Task IDs are 6-9 characters long and contain only alphanumeric characters
-  return /^[a-z0-9]{6,9}$/i.test(str);
+  // Internal task IDs: 6-9 alphanumeric characters
+  if (/^[a-z0-9]{6,9}$/i.test(str)) {
+    return true;
+  }
+  // Custom task IDs: PREFIX-NUMBER format (e.g., "CHIEF-5804", "PROJ-123")
+  if (/^[A-Z]+-\d+$/i.test(str)) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Checks if a task ID is a custom task ID (vs internal ID)
+ * Custom task IDs require special API parameters
+ */
+export function isCustomTaskId(str: string): boolean {
+  return /^[A-Z]+-\d+$/i.test(str);
 }
 
 // Cache for current user info to avoid repeated API calls and race conditions
