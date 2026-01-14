@@ -3,7 +3,7 @@ import { z } from "zod";
 import { convertMarkdownToToolCallResult, convertClickUpTextItemsToToolCallResult } from "../clickup-text";
 import { ContentBlock, DatedContentEvent, ImageMetadataBlock } from "../shared/types";
 import { CONFIG } from "../shared/config";
-import { isTaskId, getSpaceDetails, getAllTeamMembers } from "../shared/utils";
+import { isTaskId, isCustomTaskId, getSpaceDetails, getAllTeamMembers } from "../shared/utils";
 import { downloadImages } from "../shared/image-processing";
 
 // Read-specific utility functions
@@ -19,13 +19,12 @@ export function registerTaskToolsRead(server: McpServer, userData: any) {
     {
       id: z
         .string()
-        .min(6)
-        .max(9)
+        .min(1)
         .refine(val => isTaskId(val), {
-          message: "Task ID must be 6-9 alphanumeric characters only"
+          message: "Task ID must be either 6-9 alphanumeric characters or a custom ID like 'CHIEF-5804'"
         })
         .describe(
-          `The 6-9 character ID of the task to get without a prefix like "#", "CU-" or "https://app.clickup.com/t/"`
+          `The task ID - either internal (6-9 chars like "86b852ppx") or custom (like "CHIEF-5804"). Do not include prefixes like "#", "CU-" or full URLs.`
         ),
     },
     {
@@ -104,8 +103,9 @@ async function fetchTaskTimeEntries(taskId: string): Promise<any[]> {
 }
 
 async function loadTaskContent(taskId: string): Promise<(ContentBlock | ImageMetadataBlock)[]> {
+  const customIdParams = isCustomTaskId(taskId) ? `&custom_task_ids=true&team_id=${CONFIG.teamId}` : '';
   const response = await fetch(
-    `https://api.clickup.com/api/v2/task/${taskId}?include_markdown_description=true&include_subtasks=true`,
+    `https://api.clickup.com/api/v2/task/${taskId}?include_markdown_description=true&include_subtasks=true${customIdParams}`,
     { headers: { Authorization: CONFIG.apiKey } }
   );
   const task = await response.json();
@@ -127,8 +127,9 @@ async function loadTaskContent(taskId: string): Promise<(ContentBlock | ImageMet
 }
 
 async function loadTaskComments(id: string): Promise<DatedContentEvent[]> {
+  const customIdParams = isCustomTaskId(id) ? `&custom_task_ids=true&team_id=${CONFIG.teamId}` : '';
   const response = await fetch(
-    `https://api.clickup.com/api/v2/task/${id}/comment?start_date=0`, // Ensure all comments are fetched
+    `https://api.clickup.com/api/v2/task/${id}/comment?start_date=0${customIdParams}`, // Ensure all comments are fetched
     { headers: { Authorization: CONFIG.apiKey } }
   );
   if (!response.ok) {
@@ -159,7 +160,8 @@ async function loadTaskComments(id: string): Promise<DatedContentEvent[]> {
 }
 
 async function loadTimeInStatusHistory(taskId: string): Promise<DatedContentEvent[]> {
-  const url = `https://api.clickup.com/api/v2/task/${taskId}/time_in_status`;
+  const customIdParams = isCustomTaskId(taskId) ? `?custom_task_ids=true&team_id=${CONFIG.teamId}` : '';
+  const url = `https://api.clickup.com/api/v2/task/${taskId}/time_in_status${customIdParams}`;
   try {
     const response = await fetch(url, { headers: { Authorization: CONFIG.apiKey } });
     if (!response.ok) {

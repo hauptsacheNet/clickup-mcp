@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Custom task ID support** - All task-related tools now accept custom task IDs (e.g., "CHIEF-5804") in addition to internal IDs (e.g., "86b852ppx")
+- New `isCustomTaskId()` helper function to detect custom task ID format
+- Automatic `custom_task_ids=true` and `team_id` parameter injection for API calls when custom IDs are used
+
+### Changed
+- Relaxed task ID validation across all tools (`getTaskById`, `updateTask`, `addComment`, `searchTasks`, `getTimeEntries`, `createTimeEntry`) to accept both internal and custom ID formats
+- Updated tool descriptions to document custom ID support
+
 ## [1.6.0] - 2025-11-25
 
 ### Added

@@ -1,7 +1,7 @@
 import {McpServer} from "@modelcontextprotocol/sdk/server/mcp.js";
 import {z} from "zod";
 import {CONFIG} from "../shared/config";
-import {isTaskId, getTaskSearchIndex, performMultiTermSearch} from "../shared/utils";
+import {isTaskId, isCustomTaskId, getTaskSearchIndex, performMultiTermSearch} from "../shared/utils";
 import {generateTaskMetadata} from "./task-tools";
 
 const MAX_SEARCH_RESULTS = 50;
@@ -131,8 +131,9 @@ export function registerSearchTools(server: McpServer, userData: any) {
         console.error(`Attempting direct fetch for task IDs: ${taskIdsToFetchDirectly.join(', ')}`);
         const directFetchPromises = taskIdsToFetchDirectly.map(async (id) => {
           try {
+            const customIdParams = isCustomTaskId(id) ? `?custom_task_ids=true&team_id=${CONFIG.teamId}` : '';
             const response = await fetch(
-              `https://api.clickup.com/api/v2/task/${id}`,
+              `https://api.clickup.com/api/v2/task/${id}${customIdParams}`,
               {headers: {Authorization: CONFIG.apiKey}}
             );
             if (response.ok) {
