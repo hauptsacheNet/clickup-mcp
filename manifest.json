@@ -3,7 +3,7 @@
   "name": "@hauptsache.net/clickup-mcp",
   "display_name": "ClickUp",
   "icon": "icon-72x72.png",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "description": "Search, create, and retrieve tasks and documents, add comments, and track time through natural language commands.",
   "author": {
     "name": "Marco Pfeiffer",
