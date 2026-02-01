@@ -2,6 +2,34 @@
 
 Model Context Protocol (MCP) server enabling AI assistants to interact with ClickUp workspaces. Get complete task context with comments and images, search across projects, create and update tasks, collaborate through comments, and track time - all through natural language.
 
+## This MCP vs Official ClickUp MCP
+
+> See also: [Official ClickUp MCP Documentation](https://developer.clickup.com/docs/connect-an-ai-assistant-to-clickups-mcp-server)
+
+| Feature              | This MCP                                              | Official ClickUp MCP                        |
+|----------------------|-------------------------------------------------------|---------------------------------------------|
+| **Setup**            | Local npm/npx install                                 | Remote MCP (no install)                     |
+| **Authentication**   | API key only                                          | OAuth only                                  |
+| **Task Context**     | Complete with comments, status history, inline images | Requires mutiple tool calls for full contxt |
+| **Image Support**    | Inline images with smart size budgeting               | Not documented                              |
+| **Search**           | Fuzzy search on recent tasks (limited scope)          | Full ClickUp search database                |
+| **Documents**        | CRUD operations                                       | CRUD + document search                      |
+| **Time Tracking**    | View and create entries                               | Timers and entries                          |
+| **Chat Integration** | Not supported                                         | Supported                                   |
+| **Connected Apps**   | Not supported                                         | Connected Search                            |
+| **Best For**         | Coding tools, automation, context gathering           | Chat apps, task management                  |
+| **Support**          | Community (open source)                               | Official ClickUp                            |
+
+**Choose this MCP when:**
+- You need rich task context with inline images for AI coding tools
+- You need API key authentication for automation or CI/CD pipelines
+- You want the `read-minimal` mode optimized for development workflows
+
+**Choose Official MCP when:**
+- You need OAuth authentication for enterprise security compliance
+- You need Chat integration or Connected Search features
+- You want official support and no local installation
+
 ## What You Can Do
 
 Turn natural language into powerful ClickUp actions:
