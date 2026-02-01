@@ -4,6 +4,52 @@ import { estimateBase64Size } from "./data-uri";
 import { Buffer } from "buffer";
 
 /**
+ * Detect MIME type from image binary data using magic bytes (file signatures)
+ * Returns null if the format is not recognized
+ */
+function detectMimeTypeFromBuffer(buffer: ArrayBuffer): string | null {
+  const bytes = new Uint8Array(buffer);
+  if (bytes.length < 12) return null;
+
+  // PNG: 89 50 4E 47 (‰PNG)
+  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47) {
+    return "image/png";
+  }
+
+  // JPEG: FF D8 FF
+  if (bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF) {
+    return "image/jpeg";
+  }
+
+  // GIF: 47 49 46 38 (GIF8)
+  if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x38) {
+    return "image/gif";
+  }
+
+  // WebP: RIFF....WEBP
+  if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 &&
+      bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) {
+    return "image/webp";
+  }
+
+  return null;
+}
+
+/**
+ * Detect MIME type from base64-encoded image data
+ * Decodes just enough bytes to check magic numbers
+ */
+function detectMimeTypeFromBase64(base64Data: string): string | null {
+  // Need at least 16 base64 chars to decode 12 bytes for magic number detection
+  if (base64Data.length < 16) return null;
+
+  // Create a Uint8Array directly from the decoded bytes to avoid Buffer pooling issues
+  const header = Buffer.from(base64Data.slice(0, 16), "base64");
+  const bytes = new Uint8Array(header);
+  return detectMimeTypeFromBuffer(bytes.buffer);
+}
+
+/**
  * Downloads images from image_metadata blocks and applies smart size/count limiting
  * Prioritizes keeping the most recent images (assumes content is ordered with newest items last)
  * Uses intelligent size calculation accounting for text content
@@ -112,9 +158,13 @@ async function downloadSingleImage(imageMetadata: ImageMetadataBlock, perImageBu
 
       // Double-check actual size (in case Content-Length was missing or incorrect)
       if (actualSizeBytes <= perImageBudget) {
+        // Detect actual MIME type from binary data, fall back to header or default
+        const detectedMimeType = detectMimeTypeFromBuffer(imageBuffer);
+        const mimeType = detectedMimeType || response.headers.get("Content-Type") || "image/png";
+
         return {
           type: "image",
-          mimeType: response.headers.get("Content-Type") || "image/png",
+          mimeType,
           data: Buffer.from(imageBuffer).toString("base64"),
         };
       } else {
@@ -165,9 +215,13 @@ function convertInlineImage(imageMetadata: ImageMetadataBlock, perImageBudget: n
     return createImageFallback(imageMetadata);
   }
 
+  // Detect actual MIME type from binary data, fall back to declared type or default
+  const detectedMimeType = detectMimeTypeFromBase64(inlineData.base64Data);
+  const mimeType = detectedMimeType || inlineData.mimeType || "image/png";
+
   return {
     type: "image",
-    mimeType: inlineData.mimeType || "image/png",
+    mimeType,
     data: inlineData.base64Data,
   };
 }
