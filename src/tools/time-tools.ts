@@ -301,7 +301,8 @@ function processTimeEntriesData(data: any, task_id?: string, start_date?: string
               entryDuration = formatDuration(rawDuration);
             }
             
-            outputLines.push(`${entryPrefix} ${entryStart} - ${entryDuration}`);
+            const entryDescription = entry.description ? ` | ${entry.description}` : '';
+            outputLines.push(`${entryPrefix} ${entryStart} - ${entryDuration}${entryDescription}`);
           });
         }
       }
