@@ -57,6 +57,10 @@
       "description": "Get comprehensive information about a list including description, available statuses, space tags, and project context for task creation."
     },
     {
+      "name": "getFolderInfo",
+      "description": "Get information about a ClickUp folder including its lists, parent space, statuses, and metadata."
+    },
+    {
       "name": "updateListInfo",
       "description": "Append documentation or context to a list's description (append-only for safety) with markdown support and timestamp tracking."
     },

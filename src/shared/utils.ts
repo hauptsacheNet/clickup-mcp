@@ -1,5 +1,5 @@
-import {CONFIG} from "./config";
-import Fuse from 'fuse.js';
+import { CONFIG } from "./config";
+import Fuse from "fuse.js";
 
 const GLOBAL_REFRESH_INTERVAL = 60000; // 60 seconds - that is the rate limit time frame
 
@@ -32,7 +32,9 @@ export async function getCurrentUser() {
     });
 
     if (!userResponse.ok) {
-      throw new Error(`Error fetching user info: ${userResponse.status} ${userResponse.statusText}`);
+      throw new Error(
+        `Error fetching user info: ${userResponse.status} ${userResponse.statusText}`,
+      );
     }
 
     return await userResponse.json();
@@ -40,18 +42,58 @@ export async function getCurrentUser() {
 
   // Cache the promise
   cachedUserPromise = fetchPromise;
-  
+
   // Auto-cleanup after 60 seconds
   setTimeout(() => {
     cachedUserPromise = null;
     console.error(`Auto-cleaned user data cache`);
   }, GLOBAL_REFRESH_INTERVAL);
-  
+
   return fetchPromise;
 }
 
 // Re-export image processing functions for backward compatibility
 export { downloadImages } from "./image-processing";
+
+const folderCache = new Map<string, Promise<any>>(); // Global cache for folder details promises
+
+/**
+ * Function to get folder details, using a cache to avoid redundant fetches
+ */
+export function getFolderDetails(folderId: string): Promise<any> {
+  if (!folderId) {
+    return Promise.reject(new Error("Invalid folder ID"));
+  }
+
+  const cachedFolder = folderCache.get(folderId);
+  if (cachedFolder) {
+    return cachedFolder;
+  }
+
+  const fetchPromise = fetch(
+    `https://api.clickup.com/api/v2/folder/${folderId}`,
+    { headers: { Authorization: CONFIG.apiKey } },
+  )
+    .then((res) => {
+      if (!res.ok) {
+        throw new Error(`Error fetching folder ${folderId}: ${res.status}`);
+      }
+      return res.json();
+    })
+    .catch((error) => {
+      console.error(`Network error fetching folder ${folderId}:`, error);
+      throw new Error(`Error fetching folder ${folderId}: ${error}`);
+    });
+
+  folderCache.set(folderId, fetchPromise);
+
+  setTimeout(() => {
+    folderCache.delete(folderId);
+    console.error(`Auto-cleaned folder cache for ${folderId}`);
+  }, GLOBAL_REFRESH_INTERVAL);
+
+  return fetchPromise;
+}
 
 const spaceCache = new Map<string, Promise<any>>(); // Global cache for space details promises
 
@@ -60,7 +102,7 @@ const spaceCache = new Map<string, Promise<any>>(); // Global cache for space de
  */
 export function getSpaceDetails(spaceId: string): Promise<any> {
   if (!spaceId) {
-    return Promise.reject(new Error('Invalid space ID'));
+    return Promise.reject(new Error("Invalid space ID"));
   }
 
   const cachedSpace = spaceCache.get(spaceId);
@@ -70,14 +112,15 @@ export function getSpaceDetails(spaceId: string): Promise<any> {
 
   const fetchPromise = fetch(
     `https://api.clickup.com/api/v2/space/${spaceId}`,
-    {headers: {Authorization: CONFIG.apiKey}})
-    .then(res => {
+    { headers: { Authorization: CONFIG.apiKey } },
+  )
+    .then((res) => {
       if (!res.ok) {
         throw new Error(`Error fetching space ${spaceId}: ${res.status}`);
       }
       return res.json();
     })
-    .catch(error => {
+    .catch((error) => {
       console.error(`Network error fetching space ${spaceId}:`, error);
       throw new Error(`Error fetching space ${spaceId}: ${error}`);
     });
@@ -96,13 +139,13 @@ const taskIndices: Map<string, Promise<Fuse<any>>> = new Map();
 export async function getTaskSearchIndex(
   space_ids?: string[],
   list_ids?: string[],
-  assignees?: string[]
+  assignees?: string[],
 ): Promise<Fuse<any> | null> {
   // Create cache key from sorted filter arrays
   const key = JSON.stringify({
     space_ids: space_ids?.sort(),
     list_ids: list_ids?.sort(),
-    assignees: assignees?.sort()
+    assignees: assignees?.sort(),
   });
 
   // Check for existing valid index promise
@@ -136,38 +179,41 @@ export async function getTaskSearchIndex(
 async function fetchTasks(
   space_ids?: string[],
   list_ids?: string[],
-  assignees?: string[]
+  assignees?: string[],
 ): Promise<any[]> {
-  const queryParams = ['order_by=updated', 'subtasks=true'];
+  const queryParams = ["order_by=updated", "subtasks=true"];
 
   // Add filter parameters
   if (space_ids?.length) {
-    space_ids.forEach(id => queryParams.push(`space_ids[]=${id}`));
+    space_ids.forEach((id) => queryParams.push(`space_ids[]=${id}`));
   }
   if (list_ids?.length) {
-    list_ids.forEach(id => queryParams.push(`list_ids[]=${id}`));
+    list_ids.forEach((id) => queryParams.push(`list_ids[]=${id}`));
   }
   if (assignees?.length) {
-    assignees.forEach(id => queryParams.push(`assignees[]=${id}`));
+    assignees.forEach((id) => queryParams.push(`assignees[]=${id}`));
   }
 
-  const queryString = queryParams.join('&');
+  const queryString = queryParams.join("&");
 
   // Fetch multiple pages in parallel
-  const maxPages = space_ids?.length || list_ids?.length || assignees?.length ? 10 : 30; // Fewer pages for filtered searches
+  const maxPages =
+    space_ids?.length || list_ids?.length || assignees?.length ? 10 : 30; // Fewer pages for filtered searches
   const taskListsPromises = [...Array(maxPages)].map(async (_, i) => {
     const url = `https://api.clickup.com/api/v2/team/${CONFIG.teamId}/task?${queryString}&page=${i}`;
     try {
-      const res = await fetch(url, {headers: {Authorization: CONFIG.apiKey}});
+      const res = await fetch(url, {
+        headers: { Authorization: CONFIG.apiKey },
+      });
       return await res.json();
     } catch (e) {
       console.error(`Error fetching page ${i}:`, e);
-      return {tasks: []};
+      return { tasks: [] };
     }
   });
 
   const taskLists = await Promise.all(taskListsPromises);
-  return taskLists.flatMap(taskList => taskList.tasks || []);
+  return taskLists.flatMap((taskList) => taskList.tasks || []);
 }
 
 /**
@@ -176,14 +222,14 @@ async function fetchTasks(
 function createFuseIndex(tasks: any[]): Fuse<any> {
   return new Fuse(tasks, {
     keys: [
-      {name: 'name', weight: 0.7},
-      {name: 'id', weight: 0.6},
-      {name: 'text_content', weight: 0.5},
-      {name: 'tags.name', weight: 0.4},
-      {name: 'assignees.username', weight: 0.4},
-      {name: 'list.name', weight: 0.3},
-      {name: 'folder.name', weight: 0.2},
-      {name: 'space.name', weight: 0.1}
+      { name: "name", weight: 0.7 },
+      { name: "id", weight: 0.6 },
+      { name: "text_content", weight: 0.5 },
+      { name: "tags.name", weight: 0.4 },
+      { name: "assignees.username", weight: 0.4 },
+      { name: "list.name", weight: 0.3 },
+      { name: "folder.name", weight: 0.2 },
+      { name: "space.name", weight: 0.1 },
     ],
     findAllMatches: true,
     includeScore: true,
@@ -236,14 +282,20 @@ export function generateDocumentUrl(docId: string, pageId?: string): string {
  * Format space content as tree structure
  * Shared function used by both searchSpaces tool and space resources
  */
-export function formatSpaceTree(space: any, lists: any[], folders: any[], documents: any[]): string {
+export function formatSpaceTree(
+  space: any,
+  lists: any[],
+  folders: any[],
+  documents: any[],
+): string {
   const spaceLines: string[] = [];
-  const totalLists = lists.length + folders.reduce((sum, f) => sum + (f.lists?.length || 0), 0);
+  const totalLists =
+    lists.length + folders.reduce((sum, f) => sum + (f.lists?.length || 0), 0);
 
   // Space header
   spaceLines.push(
-    `🏢 SPACE: ${space.name} (space_id: ${space.id}${space.private ? ', private' : ''}${space.archived ? ', archived' : ''}) ${generateSpaceUrl(space.id)}`,
-    `   ${totalLists} lists, ${folders.length} folders, ${documents.length} documents`
+    `🏢 SPACE: ${space.name} (space_id: ${space.id}${space.private ? ", private" : ""}${space.archived ? ", archived" : ""}) ${generateSpaceUrl(space.id)}`,
+    `   ${totalLists} lists, ${folders.length} folders, ${documents.length} documents`,
   );
 
   // Create a tree structure
@@ -256,13 +308,13 @@ export function formatSpaceTree(space: any, lists: any[], folders: any[], docume
     lists.forEach((list: any, listIndex) => {
       const isLastDirectList = listIndex === lists.length - 1;
       const isLastOverall = !hasFolders && !hasDocuments && isLastDirectList;
-      const treeChar = isLastOverall ? '└──' : '├──';
+      const treeChar = isLastOverall ? "└──" : "├──";
       const extraInfo = [
         ...(list.task_count ? [`${list.task_count} tasks`] : []),
-        ...(list.private ? ['private'] : []),
-        ...(list.archived ? ['archived'] : [])
-      ].join(', ');
-      const listLine = `${treeChar} 📝 ${list.name} (list_id: ${list.id}${extraInfo ? `, ${extraInfo}` : ''}) ${generateListUrl(list.id)}`;
+        ...(list.private ? ["private"] : []),
+        ...(list.archived ? ["archived"] : []),
+      ].join(", ");
+      const listLine = `${treeChar} 📝 ${list.name} (list_id: ${list.id}${extraInfo ? `, ${extraInfo}` : ""}) ${generateListUrl(list.id)}`;
       spaceLines.push(listLine);
     });
   }
@@ -272,29 +324,29 @@ export function formatSpaceTree(space: any, lists: any[], folders: any[], docume
     folders.forEach((folder: any, folderIndex) => {
       const isLastFolder = folderIndex === folders.length - 1;
       const isLastOverall = !hasDocuments && isLastFolder;
-      const folderTreeChar = isLastOverall ? '└──' : '├──';
-      const folderContinuation = isLastOverall ? '   ' : '│  ';
-      
+      const folderTreeChar = isLastOverall ? "└──" : "├──";
+      const folderContinuation = isLastOverall ? "   " : "│  ";
+
       const folderExtraInfo = [
         ...(folder.lists?.length ? [`${folder.lists.length} lists`] : []),
-        ...(folder.private ? ['private'] : []),
-        ...(folder.archived ? ['archived'] : [])
-      ].join(', ');
-      
-      const folderLine = `${folderTreeChar} 📂 ${folder.name} (folder_id: ${folder.id}${folderExtraInfo ? `, ${folderExtraInfo}` : ''}) ${generateFolderUrl(folder.id)}`;
+        ...(folder.private ? ["private"] : []),
+        ...(folder.archived ? ["archived"] : []),
+      ].join(", ");
+
+      const folderLine = `${folderTreeChar} 📂 ${folder.name} (folder_id: ${folder.id}${folderExtraInfo ? `, ${folderExtraInfo}` : ""}) ${generateFolderUrl(folder.id)}`;
       spaceLines.push(folderLine);
 
       // Lists within this folder
       if (folder.lists && folder.lists.length > 0) {
         folder.lists.forEach((list: any, listIndex: number) => {
           const isLastListInFolder = listIndex === folder.lists.length - 1;
-          const listTreeChar = isLastListInFolder ? '└──' : '├──';
+          const listTreeChar = isLastListInFolder ? "└──" : "├──";
           const listExtraInfo = [
             ...(list.task_count ? [`${list.task_count} tasks`] : []),
-            ...(list.private ? ['private'] : []),
-            ...(list.archived ? ['archived'] : [])
-          ].join(', ');
-          const listLine = `${folderContinuation}${listTreeChar} 📝 ${list.name} (list_id: ${list.id}${listExtraInfo ? `, ${listExtraInfo}` : ''}) ${generateListUrl(list.id)}`;
+            ...(list.private ? ["private"] : []),
+            ...(list.archived ? ["archived"] : []),
+          ].join(", ");
+          const listLine = `${folderContinuation}${listTreeChar} 📝 ${list.name} (list_id: ${list.id}${listExtraInfo ? `, ${listExtraInfo}` : ""}) ${generateListUrl(list.id)}`;
           spaceLines.push(listLine);
         });
       }
@@ -305,13 +357,13 @@ export function formatSpaceTree(space: any, lists: any[], folders: any[], docume
   if (hasDocuments) {
     documents.forEach((document: any, docIndex) => {
       const isLastDocument = docIndex === documents.length - 1;
-      const docTreeChar = isLastDocument ? '└──' : '├──';
+      const docTreeChar = isLastDocument ? "└──" : "├──";
       const docLine = `${docTreeChar} 📄 ${document.name} (doc_id: ${document.id}) ${generateDocumentUrl(document.id)}`;
       spaceLines.push(docLine);
     });
   }
 
-  return spaceLines.join('\n');
+  return spaceLines.join("\n");
 }
 
 // Space search index cache - cache promise to prevent race conditions
@@ -336,7 +388,9 @@ export async function getSpaceSearchIndex(): Promise<Fuse<any> | null> {
       });
 
       if (!response.ok) {
-        throw new Error(`Error fetching spaces: ${response.status} ${response.statusText}`);
+        throw new Error(
+          `Error fetching spaces: ${response.status} ${response.statusText}`,
+        );
       }
 
       const data = await response.json();
@@ -345,15 +399,15 @@ export async function getSpaceSearchIndex(): Promise<Fuse<any> | null> {
       // Create Fuse search index
       return new Fuse(spacesData as any[], {
         keys: [
-          { name: 'name', weight: 0.7 },
-          { name: 'id', weight: 0.6 }
+          { name: "name", weight: 0.7 },
+          { name: "id", weight: 0.6 },
         ],
         includeScore: true,
         threshold: 0.4,
         minMatchCharLength: 1,
       });
     } catch (error) {
-      console.error('Error creating space search index:', error);
+      console.error("Error creating space search index:", error);
       return null;
     }
   })();
@@ -364,21 +418,22 @@ export async function getSpaceSearchIndex(): Promise<Fuse<any> | null> {
   // Auto-cleanup after 60 seconds
   setTimeout(() => {
     spaceSearchIndexPromise = null;
-    console.error('Auto-cleaned space search index');
+    console.error("Auto-cleaned space search index");
   }, GLOBAL_REFRESH_INTERVAL);
 
   return fetchPromise;
 }
-
 
 const listCache = new Map<string, Promise<any>>(); // Cache for space lists/folders
 
 /**
  * Get lists, folders, and documents for a specific space with caching
  */
-export async function getSpaceContent(spaceId: string): Promise<{ lists: any[], folders: any[], documents: any[] }> {
+export async function getSpaceContent(
+  spaceId: string,
+): Promise<{ lists: any[]; folders: any[]; documents: any[] }> {
   const cacheKey = `space-content-${spaceId}`;
-  
+
   // Check cache first
   const cachedContent = listCache.get(cacheKey);
   if (cachedContent) {
@@ -390,32 +445,35 @@ export async function getSpaceContent(spaceId: string): Promise<{ lists: any[], 
     try {
       const [folders, lists, documents] = await Promise.all([
         fetch(`https://api.clickup.com/api/v2/space/${spaceId}/folder`, {
-          headers: {Authorization: CONFIG.apiKey},
+          headers: { Authorization: CONFIG.apiKey },
         })
-          .then(response => response.json())
-          .then(json => json.folders || [])
-          .catch(e => {
+          .then((response) => response.json())
+          .then((json) => json.folders || [])
+          .catch((e) => {
             console.error(e);
-            return []
+            return [];
           }),
         fetch(`https://api.clickup.com/api/v2/space/${spaceId}/list`, {
-          headers: {Authorization: CONFIG.apiKey},
+          headers: { Authorization: CONFIG.apiKey },
         })
-          .then(response => response.json())
-          .then(json => json.lists || [])
-          .catch(e => {
+          .then((response) => response.json())
+          .then((json) => json.lists || [])
+          .catch((e) => {
             console.error(e);
-            return []
+            return [];
           }),
-        fetch(`https://api.clickup.com/api/v3/workspaces/${CONFIG.teamId}/docs?parent_id=${spaceId}`, {
-          headers: {Authorization: CONFIG.apiKey},
-        })
-          .then(response => response.json())
-          .then(json => json.docs || [])
-          .catch(e => {
+        fetch(
+          `https://api.clickup.com/api/v3/workspaces/${CONFIG.teamId}/docs?parent_id=${spaceId}`,
+          {
+            headers: { Authorization: CONFIG.apiKey },
+          },
+        )
+          .then((response) => response.json())
+          .then((json) => json.docs || [])
+          .catch((e) => {
             console.error(e);
-            return []
-          })
+            return [];
+          }),
       ]);
 
       // For each folder, also fetch its lists
@@ -423,7 +481,7 @@ export async function getSpaceContent(spaceId: string): Promise<{ lists: any[], 
         try {
           const folderListResponse = await fetch(
             `https://api.clickup.com/api/v2/folder/${folder.id}/list`,
-            { headers: { Authorization: CONFIG.apiKey } }
+            { headers: { Authorization: CONFIG.apiKey } },
           );
           if (folderListResponse.ok) {
             const folderListData = await folderListResponse.json();
@@ -448,7 +506,7 @@ export async function getSpaceContent(spaceId: string): Promise<{ lists: any[], 
 
   // Cache the promise
   listCache.set(cacheKey, fetchPromise);
-  
+
   // Auto-cleanup after 60 seconds
   setTimeout(() => {
     listCache.delete(cacheKey);
@@ -478,7 +536,9 @@ export async function getAllTeamMembers(): Promise<string[]> {
       });
 
       if (!response.ok) {
-        console.error(`Error fetching teams: ${response.status} ${response.statusText}`);
+        console.error(
+          `Error fetching teams: ${response.status} ${response.statusText}`,
+        );
         return [];
       }
 
@@ -488,28 +548,36 @@ export async function getAllTeamMembers(): Promise<string[]> {
       }
 
       // Find the team that matches our configured team ID and extract all user IDs
-      const currentTeam = data.teams.find((team: any) => team.id === CONFIG.teamId);
-      if (!currentTeam || !currentTeam.members || !Array.isArray(currentTeam.members)) {
+      const currentTeam = data.teams.find(
+        (team: any) => team.id === CONFIG.teamId,
+      );
+      if (
+        !currentTeam ||
+        !currentTeam.members ||
+        !Array.isArray(currentTeam.members)
+      ) {
         console.error(`Team ${CONFIG.teamId} not found or has no members`);
         return [];
       }
 
-      return currentTeam.members.map((member: any) => member.user?.id).filter(Boolean);
+      return currentTeam.members
+        .map((member: any) => member.user?.id)
+        .filter(Boolean);
     } catch (error) {
-      console.error('Error fetching team members:', error);
+      console.error("Error fetching team members:", error);
       return [];
     }
   })();
 
   // Cache the promise
   cachedTeamMembersPromise = fetchPromise;
-  
+
   // Auto-cleanup after 60 seconds
   setTimeout(() => {
     cachedTeamMembersPromise = null;
     console.error(`Auto-cleaned team members cache`);
   }, GLOBAL_REFRESH_INTERVAL);
-  
+
   return fetchPromise;
 }
 
@@ -521,35 +589,38 @@ export async function getAllTeamMembers(): Promise<string[]> {
  */
 export async function performMultiTermSearch<T>(
   searchIndex: Fuse<T>,
-  terms: string[]
+  terms: string[],
 ): Promise<T[]> {
   // Filter valid search terms
-  const validTerms = terms.filter(term => term && term.trim().length > 0);
+  const validTerms = terms.filter((term) => term && term.trim().length > 0);
   if (validTerms.length === 0) {
     return [];
   }
 
   // Track multiple matches per item for aggressive boosting
-  const itemMatches = new Map<string, {
-    item: T,
-    scores: number[],
-    matchedTerms: string[]
-  }>();
+  const itemMatches = new Map<
+    string,
+    {
+      item: T;
+      scores: number[];
+      matchedTerms: string[];
+    }
+  >();
 
   // Collect all matches for each term
-  validTerms.forEach(term => {
+  validTerms.forEach((term) => {
     const results = searchIndex.search(term);
-    results.forEach(result => {
-      if (result.item && typeof (result.item as any).id === 'string') {
+    results.forEach((result) => {
+      if (result.item && typeof (result.item as any).id === "string") {
         const itemId = (result.item as any).id;
         const currentScore = result.score ?? 1;
         const existing = itemMatches.get(itemId);
-        
+
         if (!existing) {
           itemMatches.set(itemId, {
             item: result.item,
             scores: [currentScore],
-            matchedTerms: [term]
+            matchedTerms: [term],
           });
         } else {
           existing.scores.push(currentScore);
@@ -560,28 +631,27 @@ export async function performMultiTermSearch<T>(
   });
 
   // Calculate aggressively boosted scores for multi-term matches
-  const uniqueResults = new Map<string, { item: T, score: number }>();
+  const uniqueResults = new Map<string, { item: T; score: number }>();
   itemMatches.forEach((match, itemId) => {
     const bestScore = Math.min(...match.scores);
     const matchCount = match.scores.length;
     const totalTerms = validTerms.length;
-    
+
     // Aggressive multi-term boost: exponential improvement for multiple matches
     // 1 match: base score
     // 2+ matches: exponentially better score based on match ratio
     const matchRatio = matchCount / totalTerms;
     const boostFactor = Math.pow(0.1, matchRatio * 4); // Very aggressive boost
     const finalScore = bestScore * boostFactor;
-    
+
     uniqueResults.set(itemId, {
       item: match.item,
-      score: finalScore
+      score: finalScore,
     });
   });
-
 
   // Return sorted results (best scores first)
   return Array.from(uniqueResults.values())
     .sort((a, b) => a.score - b.score)
-    .map(entry => entry.item);
+    .map((entry) => entry.item);
 }
