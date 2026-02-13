@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { ContentBlock } from "../shared/types";
-import { getSpaceSearchIndex, getSpaceContent, performMultiTermSearch, formatSpaceTree } from "../shared/utils";
+import { getSpaceSearchIndex, getSpaceContent, getSpaceDetails, getFolder, performMultiTermSearch, formatSpaceTree, generateFolderUrl } from "../shared/utils";
 
 export function registerSpaceTools(server: McpServer) {
   server.tool(
@@ -10,7 +10,8 @@ export function registerSpaceTools(server: McpServer) {
       "Searches spaces (sometimes called projects) by name or ID with fuzzy matching.",
       "If 5 or fewer spaces match, automatically fetches all lists (sometimes called boards) and folders within those spaces to provide a complete tree structure.",
       "If more than 5 spaces match, returns only space information with guidance to search more precisely.",
-      "You can search by space name (fuzzy matching) or provide an exact space ID.",
+      "You can search by space name (fuzzy matching) or provide an exact space or folder ID.",
+      "When a folder ID is recognized, the parent space's full tree is returned with a hint indicating the matched folder.",
       "Always reference spaces by their URLs when discussing projects or suggesting actions."
     ].join("\n"),
     {
@@ -33,17 +34,36 @@ export function registerSpaceTools(server: McpServer) {
         }
 
         let matchingSpaces: any[] = [];
+        const folderHints = new Map<string, string>(); // spaceId -> hint line
 
         if (!terms || terms.length === 0) {
           // Return all spaces if no search terms
           matchingSpaces = (searchIndex as any)._docs || [];
         } else {
-          // Perform multi-term search with aggressive boosting
-          matchingSpaces = await performMultiTermSearch(
-            searchIndex,
-            terms
-            // No ID matcher or direct fetcher for spaces - they don't have direct API endpoints
-          );
+          // Only try folder lookups for numeric terms (ClickUp folder IDs are numeric)
+          const numericTerms = terms.filter(term => /^\d+$/.test(term));
+
+          // Run Fuse search AND folder ID lookups in parallel
+          const [fuseResults, ...folderResults] = await Promise.all([
+            performMultiTermSearch(searchIndex, terms),
+            ...numericTerms.map(term => getFolder(term).catch(() => null))
+          ]);
+
+          matchingSpaces = [...fuseResults];
+
+          for (const folder of folderResults) {
+            if (!folder?.space?.id) continue;
+            const spaceId = folder.space.id;
+
+            // Record the hint for this space
+            folderHints.set(spaceId, `📂 Matched folder: ${folder.name} (folder_id: ${folder.id}) ${generateFolderUrl(folder.id)}`);
+
+            // Add parent space to results if not already present from Fuse search
+            if (!matchingSpaces.some((s: any) => s.id === spaceId)) {
+              const spaceDetails = await getSpaceDetails(spaceId);
+              matchingSpaces.push(spaceDetails);
+            }
+          }
         }
 
         // Filter by archived status
@@ -83,11 +103,12 @@ export function registerSpaceTools(server: McpServer) {
           spacesWithContent.forEach(({ space, lists, folders, documents }) => {
             // Use shared tree formatting function
             const spaceTreeText = formatSpaceTree(space, lists, folders, documents);
-            
-            // Add the complete space as a single content block
+            const hint = folderHints.get(space.id);
+
+            // Add the complete space as a single content block, with folder hint if applicable
             contentBlocks.push({
               type: "text" as const,
-              text: spaceTreeText
+              text: hint ? hint + '\n\n' + spaceTreeText : spaceTreeText
             });
           });
         } else {

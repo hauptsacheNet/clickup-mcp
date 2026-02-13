@@ -86,6 +86,46 @@ export function getSpaceDetails(spaceId: string): Promise<any> {
   return fetchPromise;
 }
 
+const folderCache = new Map<string, Promise<any>>(); // Global cache for folder details promises
+
+/**
+ * Get folder details by ID with caching.
+ * Returns folder object including space reference (space.id, space.name).
+ */
+export function getFolder(folderId: string): Promise<any> {
+  if (!folderId) {
+    return Promise.reject(new Error('Invalid folder ID'));
+  }
+
+  const cached = folderCache.get(folderId);
+  if (cached) {
+    return cached;
+  }
+
+  const fetchPromise = fetch(
+    `https://api.clickup.com/api/v2/folder/${folderId}`,
+    {headers: {Authorization: CONFIG.apiKey}})
+    .then(res => {
+      if (!res.ok) {
+        throw new Error(`Error fetching folder ${folderId}: ${res.status}`);
+      }
+      return res.json();
+    })
+    .catch(error => {
+      console.error(`Network error fetching folder ${folderId}:`, error);
+      throw new Error(`Error fetching folder ${folderId}: ${error}`);
+    });
+
+  folderCache.set(folderId, fetchPromise);
+
+  setTimeout(() => {
+    folderCache.delete(folderId);
+    console.error(`Auto-cleaned folder cache for ${folderId}`);
+  }, GLOBAL_REFRESH_INTERVAL);
+
+  return fetchPromise;
+}
+
 // Task search index management - cache promises to prevent race conditions
 const taskIndices: Map<string, Promise<Fuse<any>>> = new Map();
 

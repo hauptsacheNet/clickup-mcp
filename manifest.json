@@ -50,7 +50,7 @@
     },
     {
       "name": "searchSpaces",
-      "description": "Search spaces (projects) by name or ID with fuzzy matching. Automatically fetches complete tree structure with lists, folders, and documents for 5 or fewer matches."
+      "description": "Search spaces (projects) by name, space ID, or folder ID with fuzzy matching. When a folder ID matches, shows the parent space's tree structure. Automatically fetches complete tree structure with lists, folders, and documents for 5 or fewer matches."
     },
     {
       "name": "getListInfo",

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `searchSpaces` now accepts folder IDs as search terms, resolving them to their parent space's tree structure with a hint indicating the matched folder
 - Added comparison table in README showing differences between this MCP and the official ClickUp MCP
 
 ### Fixed
