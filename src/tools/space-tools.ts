@@ -34,7 +34,7 @@ export function registerSpaceTools(server: McpServer) {
         }
 
         let matchingSpaces: any[] = [];
-        const folderHints = new Map<string, string>(); // spaceId -> hint line
+        const matchedFolders: { id: string, name: string, spaceId: string }[] = [];
 
         if (!terms || terms.length === 0) {
           // Return all spaces if no search terms
@@ -55,8 +55,7 @@ export function registerSpaceTools(server: McpServer) {
             if (!folder?.space?.id) continue;
             const spaceId = folder.space.id;
 
-            // Record the hint for this space
-            folderHints.set(spaceId, `📂 Matched folder: ${folder.name} (folder_id: ${folder.id}) ${generateFolderUrl(folder.id)}`);
+            matchedFolders.push({ id: folder.id, name: folder.name, spaceId });
 
             // Add parent space to results if not already present from Fuse search
             if (!matchingSpaces.some((s: any) => s.id === spaceId)) {
@@ -103,12 +102,14 @@ export function registerSpaceTools(server: McpServer) {
           spacesWithContent.forEach(({ space, lists, folders, documents }) => {
             // Use shared tree formatting function
             const spaceTreeText = formatSpaceTree(space, lists, folders, documents);
-            const hint = folderHints.get(space.id);
+            const hints = matchedFolders
+              .filter(f => f.spaceId === space.id)
+              .map(f => `📂 Matched folder: ${f.name} (folder_id: ${f.id}) ${generateFolderUrl(f.id)}`);
 
-            // Add the complete space as a single content block, with folder hint if applicable
+            // Add the complete space as a single content block, with folder hint(s) if applicable
             contentBlocks.push({
               type: "text" as const,
-              text: hint ? hint + '\n\n' + spaceTreeText : spaceTreeText
+              text: hints.length > 0 ? hints.join('\n') + '\n\n' + spaceTreeText : spaceTreeText
             });
           });
         } else {
