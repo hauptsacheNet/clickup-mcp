@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Added comparison table in README showing differences between this MCP and the official ClickUp MCP
+- Extended `searchSpaces` with `folder_id` parameter to resolve a ClickUp folder by ID, returning its lists, statuses, and parent space
 
 ### Fixed
 - Fixed image MIME type detection by inspecting binary magic bytes instead of trusting HTTP headers or fallback values

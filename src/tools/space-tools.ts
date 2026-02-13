@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { ContentBlock } from "../shared/types";
-import { getSpaceSearchIndex, getSpaceContent, performMultiTermSearch, formatSpaceTree } from "../shared/utils";
+import { getSpaceSearchIndex, getSpaceContent, performMultiTermSearch, formatSpaceTree, getFolderDetails, formatFolderTree } from "../shared/utils";
 
 export function registerSpaceTools(server: McpServer) {
   server.tool(
@@ -11,20 +11,37 @@ export function registerSpaceTools(server: McpServer) {
       "If 5 or fewer spaces match, automatically fetches all lists (sometimes called boards) and folders within those spaces to provide a complete tree structure.",
       "If more than 5 spaces match, returns only space information with guidance to search more precisely.",
       "You can search by space name (fuzzy matching) or provide an exact space ID.",
+      "You can also provide a folder_id to get details about a specific folder (its lists, statuses, and parent space).",
       "Always reference spaces by their URLs when discussing projects or suggesting actions."
     ].join("\n"),
     {
       terms: z
         .array(z.string())
         .optional()
-        .describe("Array of search terms to match against space names or IDs. If not provided, returns all spaces."),
+        .describe("Array of search terms to match against space names or IDs. If not provided, returns all spaces. Ignored when folder_id is provided."),
+      folder_id: z
+        .string()
+        .optional()
+        .describe("A ClickUp folder ID to get details about a specific folder including its lists and parent space. When provided, terms and archived are ignored."),
       archived: z.boolean().optional().describe("Include archived spaces (default: false)")
     },
     {
       readOnlyHint: true
     },
-    async ({ terms, archived = false }) => {
+    async ({ terms, folder_id, archived = false }) => {
       try {
+        // If folder_id is provided, return folder details directly
+        if (folder_id) {
+          const folder = await getFolderDetails(folder_id);
+          const folderText = formatFolderTree(folder);
+          return {
+            content: [
+              { type: "text" as const, text: `Folder details for folder_id: ${folder_id}:` },
+              { type: "text" as const, text: folderText },
+            ],
+          };
+        }
+
         const searchIndex = await getSpaceSearchIndex();
         if (!searchIndex) {
           return {

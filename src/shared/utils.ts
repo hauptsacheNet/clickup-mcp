@@ -53,6 +53,93 @@ export async function getCurrentUser() {
 // Re-export image processing functions for backward compatibility
 export { downloadImages } from "./image-processing";
 
+const folderCache = new Map<string, Promise<any>>(); // Global cache for folder details promises
+
+/**
+ * Function to get folder details, using a cache to avoid redundant fetches
+ */
+export function getFolderDetails(folderId: string): Promise<any> {
+  if (!folderId) {
+    return Promise.reject(new Error('Invalid folder ID'));
+  }
+
+  const cached = folderCache.get(folderId);
+  if (cached) return cached;
+
+  const fetchPromise = fetch(
+    `https://api.clickup.com/api/v2/folder/${folderId}`,
+    { headers: { Authorization: CONFIG.apiKey } }
+  )
+    .then(res => {
+      if (!res.ok) throw new Error(`Error fetching folder ${folderId}: ${res.status}`);
+      return res.json();
+    })
+    .catch(error => {
+      console.error(`Network error fetching folder ${folderId}:`, error);
+      throw new Error(`Error fetching folder ${folderId}: ${error}`);
+    });
+
+  folderCache.set(folderId, fetchPromise);
+  setTimeout(() => {
+    folderCache.delete(folderId);
+    console.error(`Auto-cleaned folder cache for ${folderId}`);
+  }, GLOBAL_REFRESH_INTERVAL);
+
+  return fetchPromise;
+}
+
+/**
+ * Format folder content as tree structure
+ */
+export function formatFolderTree(folder: any): string {
+  const lines: string[] = [];
+
+  // Folder header with parent space info
+  const folderExtraInfo = [
+    ...(folder.private ? ['private'] : []),
+    ...(folder.archived ? ['archived'] : []),
+  ].join(', ');
+  lines.push(
+    `📂 FOLDER: ${folder.name} (folder_id: ${folder.id}${folderExtraInfo ? `, ${folderExtraInfo}` : ''}) ${generateFolderUrl(folder.id)}`
+  );
+
+  // Parent space
+  if (folder.space) {
+    lines.push(
+      `   Parent space: ${folder.space.name || 'Unknown'} (space_id: ${folder.space.id}) ${generateSpaceUrl(folder.space.id)}`
+    );
+  }
+
+  // Lists in folder
+  const lists = folder.lists || [];
+  if (lists.length > 0) {
+    lines.push(`   ${lists.length} list(s):`);
+    lists.forEach((list: any, i: number) => {
+      const isLast = i === lists.length - 1;
+      const treeChar = isLast ? '└──' : '├──';
+      const listExtraInfo = [
+        ...(list.task_count ? [`${list.task_count} tasks`] : []),
+        ...(list.private ? ['private'] : []),
+        ...(list.archived ? ['archived'] : []),
+      ].join(', ');
+      lines.push(
+        `   ${treeChar} 📝 ${list.name} (list_id: ${list.id}${listExtraInfo ? `, ${listExtraInfo}` : ''}) ${generateListUrl(list.id)}`
+      );
+
+      // Statuses for each list
+      if (list.statuses && list.statuses.length > 0) {
+        const continuation = isLast ? '   ' : '│  ';
+        const statusNames = list.statuses.map((s: any) => s.status).join(', ');
+        lines.push(`   ${continuation}   Statuses: ${statusNames}`);
+      }
+    });
+  } else {
+    lines.push('   No lists in this folder.');
+  }
+
+  return lines.join('\n');
+}
+
 const spaceCache = new Map<string, Promise<any>>(); // Global cache for space details promises
 
 /**
