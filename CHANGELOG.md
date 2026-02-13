@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Extended `searchSpaces` with `folder_id` parameter to resolve a ClickUp folder by ID, returning its lists, statuses, and parent space
 
 ### Fixed
+- `getFolderDetails()` now fetches lists via dedicated `/folder/{id}/list` endpoint instead of relying on the folder payload embedding them
 - Fixed image MIME type detection by inspecting binary magic bytes instead of trusting HTTP headers or fallback values
 
 ## [1.6.0] - 2025-11-25

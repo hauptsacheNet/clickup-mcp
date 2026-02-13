@@ -56,7 +56,9 @@ export { downloadImages } from "./image-processing";
 const folderCache = new Map<string, Promise<any>>(); // Global cache for folder details promises
 
 /**
- * Function to get folder details, using a cache to avoid redundant fetches
+ * Function to get folder details, using a cache to avoid redundant fetches.
+ * Fetches both the folder metadata and its lists (via the dedicated /list endpoint)
+ * to ensure lists are always available regardless of what GET /folder/{id} returns.
  */
 export function getFolderDetails(folderId: string): Promise<any> {
   if (!folderId) {
@@ -66,18 +68,36 @@ export function getFolderDetails(folderId: string): Promise<any> {
   const cached = folderCache.get(folderId);
   if (cached) return cached;
 
-  const fetchPromise = fetch(
-    `https://api.clickup.com/api/v2/folder/${folderId}`,
-    { headers: { Authorization: CONFIG.apiKey } }
-  )
-    .then(res => {
-      if (!res.ok) throw new Error(`Error fetching folder ${folderId}: ${res.status}`);
-      return res.json();
-    })
-    .catch(error => {
-      console.error(`Network error fetching folder ${folderId}:`, error);
-      throw new Error(`Error fetching folder ${folderId}: ${error}`);
-    });
+  const fetchPromise = (async () => {
+    const [folderRes, listsRes] = await Promise.all([
+      fetch(
+        `https://api.clickup.com/api/v2/folder/${folderId}`,
+        { headers: { Authorization: CONFIG.apiKey } }
+      ),
+      fetch(
+        `https://api.clickup.com/api/v2/folder/${folderId}/list`,
+        { headers: { Authorization: CONFIG.apiKey } }
+      ),
+    ]);
+
+    if (!folderRes.ok) throw new Error(`Error fetching folder ${folderId}: ${folderRes.status}`);
+
+    const folder = await folderRes.json();
+
+    // Merge lists from the dedicated endpoint if the folder payload lacks them
+    if (listsRes.ok) {
+      const listsData = await listsRes.json();
+      if (listsData.lists && listsData.lists.length > 0) {
+        folder.lists = listsData.lists;
+      }
+    }
+
+    return folder;
+  })().catch(error => {
+    console.error(`Network error fetching folder ${folderId}:`, error);
+    folderCache.delete(folderId);
+    throw new Error(`Error fetching folder ${folderId}: ${error}`);
+  });
 
   folderCache.set(folderId, fetchPromise);
   setTimeout(() => {

@@ -72,6 +72,7 @@ test("searchSpaces with folder_id returns folder details", async (t) => {
   setGlobalDispatcher(mockAgent);
   const client = mockAgent.get("https://api.clickup.com");
 
+  // GET /folder/{id} returns folder metadata without lists
   client
     .intercept({ path: "/api/v2/folder/folder123", method: "GET" })
     .reply(200, {
@@ -79,6 +80,12 @@ test("searchSpaces with folder_id returns folder details", async (t) => {
       name: "My Folder",
       archived: false,
       space: { id: "s1", name: "Alpha" },
+    });
+
+  // GET /folder/{id}/list returns the folder's lists
+  client
+    .intercept({ path: "/api/v2/folder/folder123/list", method: "GET" })
+    .reply(200, {
       lists: [
         {
           id: "list1",
