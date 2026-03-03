@@ -1,5 +1,5 @@
 {
-  "name": "@hauptsache.net/clickup-mcp",
+  "name": "@sebastienheyd/clickup-mcp",
   "version": "1.6.1",
   "description": "Search, create, and retrieve tasks, add comments, and track time through natural language commands.",
   "main": "dist/index.js",
@@ -35,8 +35,8 @@
     "automation"
   ],
   "author": {
-    "name": "Marco Pfeiffer",
-    "email": "marco@hauptsache.net"
+    "name": "Sébastien HEYD",
+    "url": "https://github.com/sebastienheyd"
   },
   "license": "MIT",
   "dependencies": {
@@ -63,10 +63,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/hauptsacheNet/clickup-mcp.git"
+    "url": "git+https://github.com/sebastienheyd/clickup-mcp.git"
   },
   "bugs": {
-    "url": "https://github.com/hauptsacheNet/clickup-mcp/issues"
+    "url": "https://github.com/sebastienheyd/clickup-mcp/issues"
   },
-  "homepage": "https://github.com/hauptsacheNet/clickup-mcp#readme"
+  "homepage": "https://github.com/sebastienheyd/clickup-mcp#readme"
 }

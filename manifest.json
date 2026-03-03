@@ -1,6 +1,6 @@
 {
   "manifest_version": "0.2",
-  "name": "@hauptsache.net/clickup-mcp",
+  "name": "@sebastienheyd/clickup-mcp",
   "display_name": "ClickUp",
   "icon": "icon-72x72.png",
   "version": "1.6.1",
@@ -10,9 +10,15 @@
     "email": "marco@hauptsache.net",
     "url": "https://github.com/Nemo64"
   },
-  "homepage": "https://www.hauptsache.net",
-  "documentation": "https://github.com/hauptsacheNet/clickup-mcp/blob/main/README.md",
-  "support": "https://github.com/hauptsacheNet/clickup-mcp/issues",
+  "contributors": [
+    {
+      "name": "Sébastien HEYD",
+      "url": "https://github.com/sebastienheyd"
+    }
+  ],
+  "homepage": "https://github.com/sebastienheyd/clickup-mcp",
+  "documentation": "https://github.com/sebastienheyd/clickup-mcp/blob/main/README.md",
+  "support": "https://github.com/sebastienheyd/clickup-mcp/issues",
   "server": {
     "type": "node",
     "entry_point": "dist/index.js",
@@ -120,6 +126,6 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/hauptsacheNet/clickup-mcp.git"
+    "url": "git+https://github.com/sebastienheyd/clickup-mcp.git"
   }
 }

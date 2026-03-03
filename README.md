@@ -1,5 +1,7 @@
 # ClickUp MCP for AI Assistants
 
+> **Fork** of [@hauptsache.net/clickup-mcp](https://github.com/hauptsacheNet/clickup-mcp) with custom task ID support and additional features.
+
 Model Context Protocol (MCP) server enabling AI assistants to interact with ClickUp workspaces. Get complete task context with comments and images, search across projects, create and update tasks, collaborate through comments, and track time - all through natural language.
 
 ## This MCP vs Official ClickUp MCP
@@ -62,7 +64,7 @@ Turn natural language into powerful ClickUp actions:
 - *"Add a comment to the design task about the new wireframes"*
 
 **Document Management:**
-- *"Find documents about job posting in hauptsache.net space"*
+- *"Find documents about job posting in my space"*
 - *"Search for API documentation across all spaces"*
 - *"Read the API documentation in the development space"*
 - *"Create a new requirements document for the mobile app project"*
@@ -109,7 +111,7 @@ For all installation methods, you'll need:
 
 ### Option 1: MCPB Bundle (Recommended for Claude Desktop)
 
-Download the pre-built bundle from our [releases page](https://github.com/hauptsacheNet/clickup-mcp/releases). This method requires no Node.js installation.
+Download the pre-built bundle from our [releases page](https://github.com/sebastienheyd/clickup-mcp/releases). This method requires no Node.js installation.
 
 You'll get a configuration screen where you are prompted to enter your API key and team ID.
 
@@ -127,7 +129,7 @@ Add the following to your MCP configuration file:
     "clickup": {
       "command": "npx",
       "args": [
-        "@hauptsache.net/clickup-mcp@latest"
+        "@sebastienheyd/clickup-mcp@latest"
       ],
       "env": {
         "CLICKUP_API_KEY": "your_api_key",
@@ -155,7 +157,7 @@ claude mcp add --scope user clickup \
   --env CLICKUP_MCP_MODE=read-minimal \
   --env MAX_IMAGES=16 \
   --env MAX_RESPONSE_SIZE_MB=4 \
-  -- npx -y @hauptsache.net/clickup-mcp
+  -- npx -y @sebastienheyd/clickup-mcp
 ```
 
 > Claude Code can handle a lot of images, thus the recommended increased limits.
@@ -167,7 +169,7 @@ Add these lines to your `~/.codex/config.toml` file:
 ```toml
 [mcp_servers.clickup]
 command = "npx"
-args = ["-y", "@hauptsache.net/clickup-mcp@latest"]
+args = ["-y", "@sebastienheyd/clickup-mcp@latest"]
 env = { "CLICKUP_API_KEY" = "YOUR_KEY", "CLICKUP_TEAM_ID" = "YOUR_ID", "CLICKUP_MCP_MODE" = "read-minimal" }
 ```
 
@@ -209,7 +211,7 @@ Add the mode to your MCP configuration:
   "mcpServers": {
     "clickup": {
       "command": "npx",
-      "args": ["-y", "@hauptsache.net/clickup-mcp@latest"],
+      "args": ["-y", "@sebastienheyd/clickup-mcp@latest"],
       "env": {
         "CLICKUP_API_KEY": "your_api_key",
         "CLICKUP_TEAM_ID": "your_team_id",
