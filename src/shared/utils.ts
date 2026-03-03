@@ -12,6 +12,50 @@ export function isTaskId(str: string): boolean {
   return /^[a-z0-9]{6,9}$/i.test(str);
 }
 
+/**
+ * Checks if a string looks like a ClickUp custom task ID (e.g. "SOI-4422", "PQP-123")
+ */
+export function isCustomTaskId(str: string): boolean {
+  return /^[A-Z]{1,10}-\d+$/i.test(str);
+}
+
+/**
+ * Resolves a custom task ID to an internal task ID via the ClickUp API
+ */
+export async function resolveCustomTaskId(customId: string): Promise<string> {
+  const response = await fetch(
+    `https://api.clickup.com/api/v2/task/${customId}?custom_task_ids=true&team_id=${CONFIG.teamId}`,
+    { headers: { Authorization: CONFIG.apiKey } }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Task not found for custom ID "${customId}": ${response.status} ${response.statusText}`);
+  }
+
+  const task = await response.json();
+  if (!task || !task.id) {
+    throw new Error(`Task not found for custom ID "${customId}"`);
+  }
+
+  console.error(`Resolved custom task ID "${customId}" to internal ID "${task.id}"`);
+  return task.id;
+}
+
+/**
+ * Resolves a task ID (internal or custom) to an internal task ID.
+ * If the ID is already an internal ID, returns it as-is.
+ * If the ID is a custom ID (e.g. "SOI-4422"), resolves it via the API.
+ */
+export async function resolveTaskId(id: string): Promise<string> {
+  if (isTaskId(id)) {
+    return id;
+  }
+  if (isCustomTaskId(id)) {
+    return resolveCustomTaskId(id);
+  }
+  throw new Error(`Invalid task ID format: "${id}". Expected an internal ID (6-9 alphanumeric characters) or a custom ID (e.g. "SOI-4422").`);
+}
+
 // Cache for current user info to avoid repeated API calls and race conditions
 let cachedUserPromise: Promise<any> | null = null;
 
@@ -52,6 +96,113 @@ export async function getCurrentUser() {
 
 // Re-export image processing functions for backward compatibility
 export { downloadImages } from "./image-processing";
+
+const folderCache = new Map<string, Promise<any>>(); // Global cache for folder details promises
+
+/**
+ * Function to get folder details, using a cache to avoid redundant fetches.
+ * Fetches both the folder metadata and its lists (via the dedicated /list endpoint)
+ * to ensure lists are always available regardless of what GET /folder/{id} returns.
+ */
+export function getFolderDetails(folderId: string): Promise<any> {
+  if (!folderId) {
+    return Promise.reject(new Error('Invalid folder ID'));
+  }
+
+  const cached = folderCache.get(folderId);
+  if (cached) return cached;
+
+  const fetchPromise = (async () => {
+    const [folderRes, listsRes] = await Promise.all([
+      fetch(
+        `https://api.clickup.com/api/v2/folder/${folderId}`,
+        { headers: { Authorization: CONFIG.apiKey } }
+      ),
+      fetch(
+        `https://api.clickup.com/api/v2/folder/${folderId}/list`,
+        { headers: { Authorization: CONFIG.apiKey } }
+      ),
+    ]);
+
+    if (!folderRes.ok) throw new Error(`Error fetching folder ${folderId}: ${folderRes.status}`);
+
+    const folder = await folderRes.json();
+
+    // Merge lists from the dedicated endpoint if the folder payload lacks them
+    if (listsRes.ok) {
+      const listsData = await listsRes.json();
+      if (listsData.lists && listsData.lists.length > 0) {
+        folder.lists = listsData.lists;
+      }
+    }
+
+    return folder;
+  })().catch(error => {
+    console.error(`Network error fetching folder ${folderId}:`, error);
+    folderCache.delete(folderId);
+    throw new Error(`Error fetching folder ${folderId}: ${error}`);
+  });
+
+  folderCache.set(folderId, fetchPromise);
+  setTimeout(() => {
+    folderCache.delete(folderId);
+    console.error(`Auto-cleaned folder cache for ${folderId}`);
+  }, GLOBAL_REFRESH_INTERVAL);
+
+  return fetchPromise;
+}
+
+/**
+ * Format folder content as tree structure
+ */
+export function formatFolderTree(folder: any): string {
+  const lines: string[] = [];
+
+  // Folder header with parent space info
+  const folderExtraInfo = [
+    ...(folder.private ? ['private'] : []),
+    ...(folder.archived ? ['archived'] : []),
+  ].join(', ');
+  lines.push(
+    `📂 FOLDER: ${folder.name} (folder_id: ${folder.id}${folderExtraInfo ? `, ${folderExtraInfo}` : ''}) ${generateFolderUrl(folder.id)}`
+  );
+
+  // Parent space
+  if (folder.space) {
+    lines.push(
+      `   Parent space: ${folder.space.name || 'Unknown'} (space_id: ${folder.space.id}) ${generateSpaceUrl(folder.space.id)}`
+    );
+  }
+
+  // Lists in folder
+  const lists = folder.lists || [];
+  if (lists.length > 0) {
+    lines.push(`   ${lists.length} list(s):`);
+    lists.forEach((list: any, i: number) => {
+      const isLast = i === lists.length - 1;
+      const treeChar = isLast ? '└──' : '├──';
+      const listExtraInfo = [
+        ...(list.task_count ? [`${list.task_count} tasks`] : []),
+        ...(list.private ? ['private'] : []),
+        ...(list.archived ? ['archived'] : []),
+      ].join(', ');
+      lines.push(
+        `   ${treeChar} 📝 ${list.name} (list_id: ${list.id}${listExtraInfo ? `, ${listExtraInfo}` : ''}) ${generateListUrl(list.id)}`
+      );
+
+      // Statuses for each list
+      if (list.statuses && list.statuses.length > 0) {
+        const continuation = isLast ? '   ' : '│  ';
+        const statusNames = list.statuses.map((s: any) => s.status).join(', ');
+        lines.push(`   ${continuation}   Statuses: ${statusNames}`);
+      }
+    });
+  } else {
+    lines.push('   No lists in this folder.');
+  }
+
+  return lines.join('\n');
+}
 
 const spaceCache = new Map<string, Promise<any>>(); // Global cache for space details promises
 

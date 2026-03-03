@@ -1,7 +1,7 @@
 import {McpServer} from "@modelcontextprotocol/sdk/server/mcp.js";
 import {z} from "zod";
 import {CONFIG} from "../shared/config";
-import {isTaskId, getTaskSearchIndex, performMultiTermSearch} from "../shared/utils";
+import {isTaskId, isCustomTaskId, getTaskSearchIndex, performMultiTermSearch} from "../shared/utils";
 import {generateTaskMetadata} from "./task-tools";
 
 const MAX_SEARCH_RESULTS = 50;
@@ -118,8 +118,9 @@ export function registerSearchTools(server: McpServer, userData: any) {
         uniqueResults.set(task.id, { item: task, score: 0.1 }); // Give search results a good score
       });
 
-      // Task ID Fallback Logic
+      // Task ID Fallback Logic (internal IDs and custom IDs)
       const potentialTaskIds = terms.filter(isTaskId);
+      const potentialCustomIds = terms.filter(id => isCustomTaskId(id) && !isTaskId(id));
       const foundTaskIdsByFuse = new Set(Array.from(uniqueResults.keys()).map(id => id.toLowerCase()));
 
       const taskIdsToFetchDirectly = potentialTaskIds.filter(id => {
@@ -127,6 +128,7 @@ export function registerSearchTools(server: McpServer, userData: any) {
         return !foundTaskIdsByFuse.has(lowerId);
       });
 
+      // Fetch internal task IDs not found in index
       if (taskIdsToFetchDirectly.length > 0) {
         console.error(`Attempting direct fetch for task IDs: ${taskIdsToFetchDirectly.join(', ')}`);
         const directFetchPromises = taskIdsToFetchDirectly.map(async (id) => {
@@ -152,6 +154,34 @@ export function registerSearchTools(server: McpServer, userData: any) {
           }
         });
         await Promise.all(directFetchPromises);
+      }
+
+      // Fetch custom task IDs via the custom_task_ids API parameter
+      if (potentialCustomIds.length > 0) {
+        console.error(`Attempting direct fetch for custom task IDs: ${potentialCustomIds.join(', ')}`);
+        const customFetchPromises = potentialCustomIds.map(async (customId) => {
+          try {
+            const response = await fetch(
+              `https://api.clickup.com/api/v2/task/${customId}?custom_task_ids=true&team_id=${CONFIG.teamId}`,
+              {headers: {Authorization: CONFIG.apiKey}}
+            );
+            if (response.ok) {
+              const task = await response.json();
+              if (task && typeof task.id === 'string') {
+                const existing = uniqueResults.get(task.id);
+                if (!existing || 0 < existing.score) {
+                  uniqueResults.set(task.id, {item: task, score: 0});
+                }
+              }
+              return task;
+            }
+            return null;
+          } catch (error) {
+            console.error(`Error directly fetching custom task ${customId}:`, error);
+            return null;
+          }
+        });
+        await Promise.all(customFetchPromises);
       }
 
       let resultTasks = Array.from(uniqueResults.values())

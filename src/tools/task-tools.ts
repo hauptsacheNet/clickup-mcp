@@ -3,7 +3,7 @@ import { z } from "zod";
 import { convertMarkdownToToolCallResult, convertClickUpTextItemsToToolCallResult } from "../clickup-text";
 import { ContentBlock, DatedContentEvent, ImageMetadataBlock } from "../shared/types";
 import { CONFIG } from "../shared/config";
-import { isTaskId, getSpaceDetails, getAllTeamMembers } from "../shared/utils";
+import { isTaskId, isCustomTaskId, resolveTaskId, getSpaceDetails, getAllTeamMembers } from "../shared/utils";
 import { downloadImages } from "../shared/image-processing";
 
 // Read-specific utility functions
@@ -19,24 +19,26 @@ export function registerTaskToolsRead(server: McpServer, userData: any) {
     {
       id: z
         .string()
-        .min(6)
-        .max(9)
-        .refine(val => isTaskId(val), {
-          message: "Task ID must be 6-9 alphanumeric characters only"
+        .min(1)
+        .refine(val => isTaskId(val) || isCustomTaskId(val), {
+          message: "Must be an internal task ID (6-9 alphanumeric characters) or a custom task ID (e.g. SOI-4422)"
         })
         .describe(
-          `The 6-9 character ID of the task to get without a prefix like "#", "CU-" or "https://app.clickup.com/t/"`
+          `The task ID: either an internal ID (6-9 alphanumeric characters like "869c4za0g") or a custom task ID (e.g. "SOI-4422"). Do not include prefixes like "#", "CU-" or URLs.`
         ),
     },
     {
       readOnlyHint: true
     },
     async ({ id }) => {
+      // Resolve custom task ID to internal ID if needed
+      const resolvedId = await resolveTaskId(id);
+
       // 1. Load base task content, comment events, and status change events in parallel
       const [taskDetailContentBlocks, commentEvents, statusChangeEvents] = await Promise.all([
-        loadTaskContent(id), // Returns Promise<ContentBlock[]>
-        loadTaskComments(id), // Returns Promise<DatedContentEvent[]>
-        loadTimeInStatusHistory(id), // Returns Promise<DatedContentEvent[]>
+        loadTaskContent(resolvedId), // Returns Promise<ContentBlock[]>
+        loadTaskComments(resolvedId), // Returns Promise<DatedContentEvent[]>
+        loadTimeInStatusHistory(resolvedId), // Returns Promise<DatedContentEvent[]>
       ]);
 
       // 2. Combine comment and status change events

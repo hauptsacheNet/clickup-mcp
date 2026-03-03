@@ -1,6 +1,6 @@
 {
   "manifest_version": "0.2",
-  "name": "@hauptsache.net/clickup-mcp",
+  "name": "@sebastienheyd/clickup-mcp",
   "display_name": "ClickUp",
   "icon": "icon-72x72.png",
   "version": "1.6.1",
@@ -10,9 +10,15 @@
     "email": "marco@hauptsache.net",
     "url": "https://github.com/Nemo64"
   },
-  "homepage": "https://www.hauptsache.net",
-  "documentation": "https://github.com/hauptsacheNet/clickup-mcp/blob/main/README.md",
-  "support": "https://github.com/hauptsacheNet/clickup-mcp/issues",
+  "contributors": [
+    {
+      "name": "Sébastien HEYD",
+      "url": "https://github.com/sebastienheyd"
+    }
+  ],
+  "homepage": "https://github.com/sebastienheyd/clickup-mcp",
+  "documentation": "https://github.com/sebastienheyd/clickup-mcp/blob/main/README.md",
+  "support": "https://github.com/sebastienheyd/clickup-mcp/issues",
   "server": {
     "type": "node",
     "entry_point": "dist/index.js",
@@ -30,7 +36,7 @@
   "tools": [
     {
       "name": "getTaskById",
-      "description": "Get a ClickUp task with images and comments by ID. Always use this URL when referencing tasks in conversations or sharing with others."
+      "description": "Get a ClickUp task with images and comments by ID. Supports both internal IDs (e.g. 869c4za0g) and custom task IDs (e.g. SOI-4422). Always use this URL when referencing tasks in conversations or sharing with others."
     },
     {
       "name": "addComment",
@@ -50,7 +56,7 @@
     },
     {
       "name": "searchSpaces",
-      "description": "Search spaces (projects) by name or ID with fuzzy matching. Automatically fetches complete tree structure with lists, folders, and documents for 5 or fewer matches."
+      "description": "Search spaces (projects) by name or ID with fuzzy matching. Automatically fetches complete tree structure with lists, folders, and documents for 5 or fewer matches. Can also resolve a specific folder by folder_id to get its lists, statuses, and parent space."
     },
     {
       "name": "getListInfo",
@@ -120,6 +126,6 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/hauptsacheNet/clickup-mcp.git"
+    "url": "git+https://github.com/sebastienheyd/clickup-mcp.git"
   }
 }
