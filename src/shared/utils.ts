@@ -12,6 +12,50 @@ export function isTaskId(str: string): boolean {
   return /^[a-z0-9]{6,9}$/i.test(str);
 }
 
+/**
+ * Checks if a string looks like a ClickUp custom task ID (e.g. "SOI-4422", "PQP-123")
+ */
+export function isCustomTaskId(str: string): boolean {
+  return /^[A-Z]{1,10}-\d+$/i.test(str);
+}
+
+/**
+ * Resolves a custom task ID to an internal task ID via the ClickUp API
+ */
+export async function resolveCustomTaskId(customId: string): Promise<string> {
+  const response = await fetch(
+    `https://api.clickup.com/api/v2/task/${customId}?custom_task_ids=true&team_id=${CONFIG.teamId}`,
+    { headers: { Authorization: CONFIG.apiKey } }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Task not found for custom ID "${customId}": ${response.status} ${response.statusText}`);
+  }
+
+  const task = await response.json();
+  if (!task || !task.id) {
+    throw new Error(`Task not found for custom ID "${customId}"`);
+  }
+
+  console.error(`Resolved custom task ID "${customId}" to internal ID "${task.id}"`);
+  return task.id;
+}
+
+/**
+ * Resolves a task ID (internal or custom) to an internal task ID.
+ * If the ID is already an internal ID, returns it as-is.
+ * If the ID is a custom ID (e.g. "SOI-4422"), resolves it via the API.
+ */
+export async function resolveTaskId(id: string): Promise<string> {
+  if (isTaskId(id)) {
+    return id;
+  }
+  if (isCustomTaskId(id)) {
+    return resolveCustomTaskId(id);
+  }
+  throw new Error(`Invalid task ID format: "${id}". Expected an internal ID (6-9 alphanumeric characters) or a custom ID (e.g. "SOI-4422").`);
+}
+
 // Cache for current user info to avoid repeated API calls and race conditions
 let cachedUserPromise: Promise<any> | null = null;
 

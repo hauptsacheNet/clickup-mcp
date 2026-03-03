@@ -30,7 +30,7 @@
   "tools": [
     {
       "name": "getTaskById",
-      "description": "Get a ClickUp task with images and comments by ID. Always use this URL when referencing tasks in conversations or sharing with others."
+      "description": "Get a ClickUp task with images and comments by ID. Supports both internal IDs (e.g. 869c4za0g) and custom task IDs (e.g. SOI-4422). Always use this URL when referencing tasks in conversations or sharing with others."
     },
     {
       "name": "addComment",

@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { CONFIG } from "../shared/config";
-import { getCurrentUser } from "../shared/utils";
+import { getCurrentUser, isTaskId, isCustomTaskId, resolveTaskId } from "../shared/utils";
 import { convertMarkdownToClickUpBlocks } from "../clickup-text";
 
 // Shared schemas for task parameters
@@ -35,7 +35,9 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
       return descriptionBase.join("\n");
     })(),
     {
-      task_id: z.string().min(6).max(9).describe("The 6-9 character task ID to comment on"),
+      task_id: z.string().min(1).refine(val => isTaskId(val) || isCustomTaskId(val), {
+        message: "Must be an internal task ID (6-9 alphanumeric characters) or a custom task ID (e.g. SOI-4422)"
+      }).describe("The task ID to comment on: internal ID (e.g. \"869c4za0g\") or custom ID (e.g. \"SOI-4422\")"),
       comment: z.string().min(1).describe("The comment text to add to the task"),
     },
     {
@@ -45,6 +47,9 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
     },
     async ({ task_id, comment }) => {
       try {
+        // Resolve custom task ID to internal ID if needed
+        const resolved_task_id = await resolveTaskId(task_id);
+
         // Convert markdown to ClickUp formatted blocks
         const commentBlocks = convertMarkdownToClickUpBlocks(comment);
 
@@ -53,7 +58,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
           notify_all: true
         };
 
-        const response = await fetch(`https://api.clickup.com/api/v2/task/${task_id}/comment`, {
+        const response = await fetch(`https://api.clickup.com/api/v2/task/${resolved_task_id}/comment`, {
           method: 'POST',
           headers: {
             Authorization: CONFIG.apiKey,
@@ -76,7 +81,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
               text: [
                 `Comment added successfully!`,
                 `comment_id: ${commentData.id || 'N/A'}`,
-                `task_id: ${task_id}`,
+                `task_id: ${resolved_task_id}`,
                 `comment: ${comment}`,
                 `date: ${timestampToIso(commentData.date || Date.now())}`,
                 `user: ${commentData.user?.username || 'Current user'}`,
@@ -122,7 +127,9 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
       return descriptionBase.join("\n");
     })(),
     {
-      task_id: z.string().min(6).max(9).describe("The 6-9 character task ID to update"),
+      task_id: z.string().min(1).refine(val => isTaskId(val) || isCustomTaskId(val), {
+        message: "Must be an internal task ID (6-9 alphanumeric characters) or a custom task ID (e.g. SOI-4422)"
+      }).describe("The task ID to update: internal ID (e.g. \"869c4za0g\") or custom ID (e.g. \"SOI-4422\")"),
       name: taskNameSchema.optional(),
       append_description: z.string().optional().describe("Optional markdown content to APPEND to existing task description (preserves existing content for safety)"),
       status: z.string().optional().describe("Optional new status name - use getListInfo to see valid options"),
@@ -145,10 +152,13 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
     },
     async ({ task_id, name, append_description, status, priority, due_date, start_date, time_estimate, tags, parent_task_id, assignees, blocking, waiting_on, linked_tasks }) => {
       try {
+        // Resolve custom task ID to internal ID if needed
+        const resolved_task_id = await resolveTaskId(task_id);
+
         const userData = await getCurrentUser();
 
         // Get task details including current markdown description
-        const taskResponse = await fetch(`https://api.clickup.com/api/v2/task/${task_id}?include_markdown_description=true`, {
+        const taskResponse = await fetch(`https://api.clickup.com/api/v2/task/${resolved_task_id}?include_markdown_description=true`, {
           headers: { Authorization: CONFIG.apiKey },
         });
 
@@ -162,7 +172,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
         let dependencyUpdateResults: string[] = [];
         if (blocking !== undefined || waiting_on !== undefined || linked_tasks !== undefined) {
           const dependencyResults = await updateTaskDependencies(
-            task_id,
+            resolved_task_id,
             taskData,
             { blocking, waiting_on, linked_tasks }
           );
@@ -181,7 +191,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
           for (const tagName of tagsToAdd) {
             try {
               const addTagResponse = await fetch(
-                `https://api.clickup.com/api/v2/task/${task_id}/tag/${encodeURIComponent(tagName)}`,
+                `https://api.clickup.com/api/v2/task/${resolved_task_id}/tag/${encodeURIComponent(tagName)}`,
                 {
                   method: 'POST',
                   headers: { Authorization: CONFIG.apiKey }
@@ -201,7 +211,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
           for (const tagName of tagsToRemove) {
             try {
               const removeTagResponse = await fetch(
-                `https://api.clickup.com/api/v2/task/${task_id}/tag/${encodeURIComponent(tagName)}`,
+                `https://api.clickup.com/api/v2/task/${resolved_task_id}/tag/${encodeURIComponent(tagName)}`,
                 {
                   method: 'DELETE',
                   headers: { Authorization: CONFIG.apiKey }
@@ -257,7 +267,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
         // Update the task (if there are non-tag updates)
         let updatedTask = taskData;
         if (Object.keys(updateBody).length > 0) {
-          const updateResponse = await fetch(`https://api.clickup.com/api/v2/task/${task_id}`, {
+          const updateResponse = await fetch(`https://api.clickup.com/api/v2/task/${resolved_task_id}`, {
             method: 'PUT',
             headers: {
               Authorization: CONFIG.apiKey,
@@ -276,7 +286,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
 
         // If only tags or dependencies were updated, fetch the task again to get the updated state
         if ((tags !== undefined || blocking !== undefined || waiting_on !== undefined || linked_tasks !== undefined) && Object.keys(updateBody).length === 0) {
-          const refreshResponse = await fetch(`https://api.clickup.com/api/v2/task/${task_id}`, {
+          const refreshResponse = await fetch(`https://api.clickup.com/api/v2/task/${resolved_task_id}`, {
             headers: { Authorization: CONFIG.apiKey },
           });
           if (refreshResponse.ok) {
