@@ -282,9 +282,13 @@ export async function generateTaskMetadata(task: any, timeEntries?: any[], isDet
   let spaceIdForDisplay = task.space?.id || 'N/A';
 
   if (spaceName === 'Unknown Space' && task.space?.id) {
-    const spaceDetails = await getSpaceDetails(task.space.id);
-    if (spaceDetails && spaceDetails.name) {
-      spaceName = spaceDetails.name;
+    try {
+      const spaceDetails = await getSpaceDetails(task.space.id);
+      if (spaceDetails && spaceDetails.name) {
+        spaceName = spaceDetails.name;
+      }
+    } catch {
+      // Space details fetch can fail (e.g. 401) - gracefully keep "Unknown Space"
     }
   }
 
