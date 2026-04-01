@@ -33,6 +33,10 @@
       "description": "Get a ClickUp task with images and comments by ID. Always use this URL when referencing tasks in conversations or sharing with others."
     },
     {
+      "name": "getTaskByCustomId",
+      "description": "Get a ClickUp task by its custom task ID (e.g. 'PREFIX-123'). Use this when you have a human-readable custom ID instead of the internal task ID."
+    },
+    {
       "name": "addComment",
       "description": "Add a comment to a specific task with linking best practices and progress updates."
     },
