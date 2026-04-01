@@ -1,7 +1,14 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { convertMarkdownToToolCallResult, convertClickUpTextItemsToToolCallResult } from "../clickup-text";
-import { ContentBlock, DatedContentEvent, ImageMetadataBlock } from "../shared/types";
+import {
+  convertMarkdownToToolCallResult,
+  convertClickUpTextItemsToToolCallResult,
+} from "../clickup-text";
+import {
+  ContentBlock,
+  DatedContentEvent,
+  ImageMetadataBlock,
+} from "../shared/types";
 import { CONFIG } from "../shared/config";
 import { isTaskId, getSpaceDetails, getAllTeamMembers } from "../shared/utils";
 import { downloadImages } from "../shared/image-processing";
@@ -14,33 +21,38 @@ export function registerTaskToolsRead(server: McpServer, userData: any) {
     [
       "Get a ClickUp task with images and comments by ID.",
       "Always use this URL when referencing tasks in conversations or sharing with others.",
-      "The response provides complete context including task details, comments, and status history."
+      "The response provides complete context including task details, comments, and status history.",
     ].join("\n"),
     {
       id: z
         .string()
         .min(6)
         .max(9)
-        .refine(val => isTaskId(val), {
-          message: "Task ID must be 6-9 alphanumeric characters only"
+        .refine((val) => isTaskId(val), {
+          message: "Task ID must be 6-9 alphanumeric characters only",
         })
         .describe(
-          `The 6-9 character ID of the task to get without a prefix like "#", "CU-" or "https://app.clickup.com/t/"`
+          `The 6-9 character ID of the task to get without a prefix like "#", "CU-" or "https://app.clickup.com/t/"`,
         ),
     },
     {
-      readOnlyHint: true
+      readOnlyHint: true,
     },
     async ({ id }) => {
       // 1. Load base task content, comment events, and status change events in parallel
-      const [taskDetailContentBlocks, commentEvents, statusChangeEvents] = await Promise.all([
-        loadTaskContent(id), // Returns Promise<ContentBlock[]>
-        loadTaskComments(id), // Returns Promise<DatedContentEvent[]>
-        loadTimeInStatusHistory(id), // Returns Promise<DatedContentEvent[]>
-      ]);
+      const [taskDetailResult, commentEvents, statusChangeEvents] =
+        await Promise.all([
+          loadTaskContent(id), // Returns Promise<{ contentBlocks, realTaskId }>
+          loadTaskComments(id), // Returns Promise<DatedContentEvent[]>
+          loadTimeInStatusHistory(id), // Returns Promise<DatedContentEvent[]>
+        ]);
+      const taskDetailContentBlocks = taskDetailResult.contentBlocks;
 
       // 2. Combine comment and status change events
-      const allDatedEvents: DatedContentEvent[] = [...commentEvents, ...statusChangeEvents];
+      const allDatedEvents: DatedContentEvent[] = [
+        ...commentEvents,
+        ...statusChangeEvents,
+      ];
 
       // 3. Sort all dated events chronologically
       allDatedEvents.sort((a, b) => {
@@ -56,17 +68,86 @@ export function registerTaskToolsRead(server: McpServer, userData: any) {
       }
 
       // 5. Combine task details with processed event blocks
-      const allContentBlocks: (ContentBlock | ImageMetadataBlock)[] = [...taskDetailContentBlocks, ...processedEventBlocks];
+      const allContentBlocks: (ContentBlock | ImageMetadataBlock)[] = [
+        ...taskDetailContentBlocks,
+        ...processedEventBlocks,
+      ];
 
       // 6. Download images with smart size limiting
-      const limitedContent: ContentBlock[] = await downloadImages(allContentBlocks);
+      const limitedContent: ContentBlock[] =
+        await downloadImages(allContentBlocks);
 
       return {
         content: limitedContent,
       };
-    }
+    },
   );
 
+  server.tool(
+    "getTaskByCustomId",
+    [
+      "Get a ClickUp task by its custom task ID (e.g. 'PREFIX-123').",
+      "Use this when you have a human-readable custom ID instead of the internal task ID.",
+      "The response provides complete context including task details, comments, and status history.",
+    ].join("\n"),
+    {
+      customId: z
+        .string()
+        .min(1)
+        .describe(
+          `The custom task ID (e.g. 'PREFIX-123') as configured in the ClickUp space.`,
+        ),
+    },
+    {
+      readOnlyHint: true,
+    },
+    async ({ customId }) => {
+      // 1. Load task content with custom_task_ids flag to resolve the real task ID
+      const taskDetailResult = await loadTaskContent(customId, {
+        customTaskIds: true,
+      });
+      const realTaskId = taskDetailResult.realTaskId;
+
+      // 2. Load comment events and status change events using the real task ID
+      const [commentEvents, statusChangeEvents] = await Promise.all([
+        loadTaskComments(realTaskId),
+        loadTimeInStatusHistory(realTaskId),
+      ]);
+
+      // 3. Combine comment and status change events
+      const allDatedEvents: DatedContentEvent[] = [
+        ...commentEvents,
+        ...statusChangeEvents,
+      ];
+
+      // 4. Sort all dated events chronologically
+      allDatedEvents.sort((a, b) => {
+        const dateA = a.date ? parseInt(a.date) : 0;
+        const dateB = b.date ? parseInt(b.date) : 0;
+        return dateA - dateB;
+      });
+
+      // 5. Flatten sorted events into a single ContentBlock stream
+      let processedEventBlocks: (ContentBlock | ImageMetadataBlock)[] = [];
+      for (const event of allDatedEvents) {
+        processedEventBlocks.push(...event.contentBlocks);
+      }
+
+      // 6. Combine task details with processed event blocks
+      const allContentBlocks: (ContentBlock | ImageMetadataBlock)[] = [
+        ...taskDetailResult.contentBlocks,
+        ...processedEventBlocks,
+      ];
+
+      // 7. Download images with smart size limiting
+      const limitedContent: ContentBlock[] =
+        await downloadImages(allContentBlocks);
+
+      return {
+        content: limitedContent,
+      };
+    },
+  );
 }
 
 /**
@@ -78,35 +159,54 @@ async function fetchTaskTimeEntries(taskId: string): Promise<any[]> {
     const teamMembers = await getAllTeamMembers();
     const params = new URLSearchParams({
       task_id: taskId,
-      include_location_names: 'true',
-      start_date: '0', // overwrite the default 30 days
+      include_location_names: "true",
+      start_date: "0", // overwrite the default 30 days
     });
 
     if (teamMembers.length > 0) {
-      params.append('assignee', teamMembers.join(','));
+      params.append("assignee", teamMembers.join(","));
     }
 
-    const response = await fetch(`https://api.clickup.com/api/v2/team/${CONFIG.teamId}/time_entries?${params}`, {
-      headers: { Authorization: CONFIG.apiKey },
-    });
+    const response = await fetch(
+      `https://api.clickup.com/api/v2/team/${CONFIG.teamId}/time_entries?${params}`,
+      {
+        headers: { Authorization: CONFIG.apiKey },
+      },
+    );
 
     if (!response.ok) {
-      console.error(`Error fetching time entries for task ${taskId}: ${response.status} ${response.statusText}`);
+      console.error(
+        `Error fetching time entries for task ${taskId}: ${response.status} ${response.statusText}`,
+      );
       return [];
     }
 
     const data = await response.json();
     return data.data || [];
   } catch (error) {
-    console.error('Error fetching task time entries:', error);
+    console.error("Error fetching task time entries:", error);
     return [];
   }
 }
 
-async function loadTaskContent(taskId: string): Promise<(ContentBlock | ImageMetadataBlock)[]> {
+async function loadTaskContent(
+  taskId: string,
+  options?: { customTaskIds?: boolean },
+): Promise<{
+  contentBlocks: (ContentBlock | ImageMetadataBlock)[];
+  realTaskId: string;
+}> {
+  const params = new URLSearchParams({
+    include_markdown_description: "true",
+    include_subtasks: "true",
+  });
+  if (options?.customTaskIds) {
+    params.set("custom_task_ids", "true");
+    params.set("team_id", CONFIG.teamId);
+  }
   const response = await fetch(
-    `https://api.clickup.com/api/v2/task/${taskId}?include_markdown_description=true&include_subtasks=true`,
-    { headers: { Authorization: CONFIG.apiKey } }
+    `https://api.clickup.com/api/v2/task/${taskId}?${params}`,
+    { headers: { Authorization: CONFIG.apiKey } },
   );
   const task = await response.json();
 
@@ -119,20 +219,22 @@ async function loadTaskContent(taskId: string): Promise<(ContentBlock | ImageMet
     // process markdown and download images
     convertMarkdownToToolCallResult(
       task.markdown_description || "",
-      task.attachments || []
+      task.attachments || [],
     ),
   ]);
 
-  return [taskMetadata, ...content];
+  return { contentBlocks: [taskMetadata, ...content], realTaskId: task.id };
 }
 
 async function loadTaskComments(id: string): Promise<DatedContentEvent[]> {
   const response = await fetch(
     `https://api.clickup.com/api/v2/task/${id}/comment?start_date=0`, // Ensure all comments are fetched
-    { headers: { Authorization: CONFIG.apiKey } }
+    { headers: { Authorization: CONFIG.apiKey } },
   );
   if (!response.ok) {
-    console.error(`Error fetching comments for task ${id}: ${response.status} ${response.statusText}`);
+    console.error(
+      `Error fetching comments for task ${id}: ${response.status} ${response.statusText}`,
+    );
     return [];
   }
   const commentsData = await response.json();
@@ -147,37 +249,52 @@ async function loadTaskComments(id: string): Promise<DatedContentEvent[]> {
         text: `Comment by ${comment.user.username} on ${timestampToIso(comment.date)}:`,
       };
 
-      const commentBodyBlocks: (ContentBlock | ImageMetadataBlock)[] = await convertClickUpTextItemsToToolCallResult(comment.comment);
+      const commentBodyBlocks: (ContentBlock | ImageMetadataBlock)[] =
+        await convertClickUpTextItemsToToolCallResult(comment.comment);
 
       return {
         date: comment.date, // String timestamp from ClickUp for sorting
         contentBlocks: [headerBlock, ...commentBodyBlocks],
       };
-    })
+    }),
   );
   return commentEvents;
 }
 
-async function loadTimeInStatusHistory(taskId: string): Promise<DatedContentEvent[]> {
+async function loadTimeInStatusHistory(
+  taskId: string,
+): Promise<DatedContentEvent[]> {
   const url = `https://api.clickup.com/api/v2/task/${taskId}/time_in_status`;
   try {
-    const response = await fetch(url, { headers: { Authorization: CONFIG.apiKey } });
+    const response = await fetch(url, {
+      headers: { Authorization: CONFIG.apiKey },
+    });
     if (!response.ok) {
-      console.error(`Error fetching time in status for task ${taskId}: ${response.status} ${response.statusText}`);
+      console.error(
+        `Error fetching time in status for task ${taskId}: ${response.status} ${response.statusText}`,
+      );
       return [];
     }
     // Using 'any' for less strict typing as per user preference, but keeping structure for clarity
-    const data: any = await response.json(); 
+    const data: any = await response.json();
     const events: DatedContentEvent[] = [];
 
     const processStatusEntry = (entry: any): DatedContentEvent | null => {
-      if (!entry || !entry.total_time || !entry.total_time.since || !entry.status) return null;
+      if (
+        !entry ||
+        !entry.total_time ||
+        !entry.total_time.since ||
+        !entry.status
+      )
+        return null;
       return {
         date: entry.total_time.since,
-        contentBlocks: [{
-          type: "text",
-          text: `Status set to '${entry.status}' on ${timestampToIso(entry.total_time.since)}`,
-        }],
+        contentBlocks: [
+          {
+            type: "text",
+            text: `Status set to '${entry.status}' on ${timestampToIso(entry.total_time.since)}`,
+          },
+        ],
       };
     };
 
@@ -196,19 +313,26 @@ async function loadTimeInStatusHistory(taskId: string): Promise<DatedContentEven
     }
 
     // Deduplicate events based on date and status name to avoid adding current_status if it's identical to the last history entry
-    const uniqueEvents = Array.from(new Map(events.map(event => {
-      const firstBlock = event.contentBlocks[0];
-      const textKey = firstBlock && 'text' in firstBlock ? firstBlock.text : 'unknown';
-      return [`${event.date}-${textKey}`, event];
-    })).values());
+    const uniqueEvents = Array.from(
+      new Map(
+        events.map((event) => {
+          const firstBlock = event.contentBlocks[0];
+          const textKey =
+            firstBlock && "text" in firstBlock ? firstBlock.text : "unknown";
+          return [`${event.date}-${textKey}`, event];
+        }),
+      ).values(),
+    );
 
     return uniqueEvents;
   } catch (error) {
-    console.error(`Exception fetching time in status for task ${taskId}:`, error);
+    console.error(
+      `Exception fetching time in status for task ${taskId}:`,
+      error,
+    );
     return [];
   }
 }
-
 
 /**
  * Formats timestamp to ISO string with local timezone (not UTC)
@@ -217,17 +341,21 @@ function timestampToIso(timestamp: number | string): string {
   const date = new Date(+timestamp);
 
   const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  const hours = String(date.getHours()).padStart(2, '0');
-  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
 
   // Calculate timezone offset
   const offset = date.getTimezoneOffset();
   const offsetHours = Math.floor(Math.abs(offset) / 60);
   const offsetMinutes = Math.abs(offset) % 60;
-  const sign = offset <= 0 ? '+' : '-';
-  const timezoneOffset = sign + String(offsetHours).padStart(2, '0') + ':' + String(offsetMinutes).padStart(2, '0');
+  const sign = offset <= 0 ? "+" : "-";
+  const timezoneOffset =
+    sign +
+    String(offsetHours).padStart(2, "0") +
+    ":" +
+    String(offsetMinutes).padStart(2, "0");
 
   return `${year}-${month}-${day}T${hours}:${minutes}${timezoneOffset}`;
 }
@@ -235,13 +363,18 @@ function timestampToIso(timestamp: number | string): string {
 /**
  * Helper function to filter and format time entries for a specific task
  */
-function filterTaskTimeEntries(taskId: string, timeEntries: any[]): string | null {
+function filterTaskTimeEntries(
+  taskId: string,
+  timeEntries: any[],
+): string | null {
   if (!timeEntries || timeEntries.length === 0) {
     return null;
   }
 
   // Filter entries for this specific task
-  const taskEntries = timeEntries.filter((entry: any) => entry.task?.id === taskId);
+  const taskEntries = timeEntries.filter(
+    (entry: any) => entry.task?.id === taskId,
+  );
 
   if (taskEntries.length === 0) {
     return null;
@@ -251,7 +384,7 @@ function filterTaskTimeEntries(taskId: string, timeEntries: any[]): string | nul
   const timeByUser = new Map<string, number>();
 
   taskEntries.forEach((entry: any) => {
-    const username = entry.user?.username || 'Unknown User';
+    const username = entry.user?.username || "Unknown User";
     const currentTime = timeByUser.get(username) || 0;
     const entryDurationMs = parseInt(entry.duration) || 0;
     timeByUser.set(username, currentTime + entryDurationMs);
@@ -264,24 +397,29 @@ function filterTaskTimeEntries(taskId: string, timeEntries: any[]): string | nul
     const hours = totalMs / (1000 * 60 * 60);
     const displayHours = Math.floor(hours);
     const displayMinutes = Math.round((hours - displayHours) * 60);
-    const timeDisplay = displayHours > 0 ? 
-      `${displayHours}h ${displayMinutes}m` : 
-      `${displayMinutes}m`;
+    const timeDisplay =
+      displayHours > 0
+        ? `${displayHours}h ${displayMinutes}m`
+        : `${displayMinutes}m`;
 
     userTimeEntries.push(`${username}: ${timeDisplay}`);
   }
 
-  return userTimeEntries.length > 0 ? userTimeEntries.join(', ') : null;
+  return userTimeEntries.length > 0 ? userTimeEntries.join(", ") : null;
 }
 
 /**
  * Helper function to generate consistent task metadata
  */
-export async function generateTaskMetadata(task: any, timeEntries?: any[], isDetailView: boolean = false): Promise<ContentBlock> {
-  let spaceName = task.space?.name || 'Unknown Space';
-  let spaceIdForDisplay = task.space?.id || 'N/A';
+export async function generateTaskMetadata(
+  task: any,
+  timeEntries?: any[],
+  isDetailView: boolean = false,
+): Promise<ContentBlock> {
+  let spaceName = task.space?.name || "Unknown Space";
+  let spaceIdForDisplay = task.space?.id || "N/A";
 
-  if (spaceName === 'Unknown Space' && task.space?.id) {
+  if (spaceName === "Unknown Space" && task.space?.id) {
     const spaceDetails = await getSpaceDetails(task.space.id);
     if (spaceDetails && spaceDetails.name) {
       spaceName = spaceDetails.name;
@@ -296,14 +434,14 @@ export async function generateTaskMetadata(task: any, timeEntries?: any[], isDet
     `date_created: ${timestampToIso(task.date_created)}`,
     `date_updated: ${timestampToIso(task.date_updated)}`,
     `creator: ${task.creator.username} (${task.creator.id})`,
-    `assignee: ${task.assignees.map((a: any) => `${a.username} (${a.id})`).join(', ')}`,
+    `assignee: ${task.assignees.map((a: any) => `${a.username} (${a.id})`).join(", ")}`,
     `list: ${task.list.name} (${task.list.id})`,
     `space: ${spaceName} (${spaceIdForDisplay})`,
   ];
 
   // Add priority if it exists
   if (task.priority !== undefined && task.priority !== null) {
-    const priorityName = task.priority.priority || 'none';
+    const priorityName = task.priority.priority || "none";
     metadataLines.push(`priority: ${priorityName}`);
   }
 
@@ -335,12 +473,14 @@ export async function generateTaskMetadata(task: any, timeEntries?: any[], isDet
 
   // Add tags if they exist
   if (task.tags && task.tags.length > 0) {
-    metadataLines.push(`tags: ${task.tags.map((t: any) => t.name).join(', ')}`);
+    metadataLines.push(`tags: ${task.tags.map((t: any) => t.name).join(", ")}`);
   }
 
   // Add watchers if they exist
   if (task.watchers && task.watchers.length > 0) {
-    metadataLines.push(`watchers: ${task.watchers.map((w: any) => w.username).join(', ')}`);
+    metadataLines.push(
+      `watchers: ${task.watchers.map((w: any) => w.username).join(", ")}`,
+    );
   }
 
   // Add parent task information if it exists
@@ -350,9 +490,10 @@ export async function generateTaskMetadata(task: any, timeEntries?: any[], isDet
 
   // Add child task information if it exists
   if (task.subtasks && task.subtasks.length > 0) {
-    metadataLines.push(`child_task_ids: ${task.subtasks.map((st: any) => st.id).join(', ')}`);
+    metadataLines.push(
+      `child_task_ids: ${task.subtasks.map((st: any) => st.id).join(", ")}`,
+    );
   }
-
 
   // Add archived status if true
   if (task.archived) {
@@ -362,21 +503,30 @@ export async function generateTaskMetadata(task: any, timeEntries?: any[], isDet
   // Add custom fields if they exist
   if (task.custom_fields && task.custom_fields.length > 0) {
     task.custom_fields.forEach((field: any) => {
-      if (field.value !== undefined && field.value !== null && field.value !== '') {
-        const fieldName = field.name.toLowerCase().replace(/\s+/g, '_');
+      if (
+        field.value !== undefined &&
+        field.value !== null &&
+        field.value !== ""
+      ) {
+        const fieldName = field.name.toLowerCase().replace(/\s+/g, "_");
         let fieldValue = field.value;
 
         // Handle different custom field types
-        if (field.type === 'drop_down' && typeof field.value === 'number') {
+        if (field.type === "drop_down" && typeof field.value === "number") {
           // For dropdown fields, find the selected option
-          const selectedOption = field.type_config?.options?.find((opt: any) => opt.orderindex === field.value);
+          const selectedOption = field.type_config?.options?.find(
+            (opt: any) => opt.orderindex === field.value,
+          );
           fieldValue = selectedOption?.name || field.value;
         } else if (Array.isArray(field.value)) {
           // For multi-select or array values
-          fieldValue = field.value.map((v: any) => v.name || v).join(', ');
-        } else if (typeof field.value === 'object') {
+          fieldValue = field.value.map((v: any) => v.name || v).join(", ");
+        } else if (typeof field.value === "object") {
           // For object values (like users), extract meaningful data
-          fieldValue = field.value.username || field.value.name || JSON.stringify(field.value);
+          fieldValue =
+            field.value.username ||
+            field.value.name ||
+            JSON.stringify(field.value);
         }
 
         metadataLines.push(`custom_${fieldName}: ${fieldValue}`);
