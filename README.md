@@ -175,6 +175,27 @@ env = { "CLICKUP_API_KEY" = "YOUR_KEY", "CLICKUP_TEAM_ID" = "YOUR_ID", "CLICKUP_
 
 > Note the `CLICKUP_MCP_MODE=read-minimal`. This is my usage recommendation, but feel free to use one of the other modes.
 
+**Factory:**
+
+[Factory](https://factory.ai) is an AI-powered software engineering platform. Add ClickUp MCP using Factory's CLI:
+
+```bash
+droid mcp add clickup "npx -y @hauptsache.net/clickup-mcp@latest" \
+  --env CLICKUP_API_KEY=YOUR_KEY \
+  --env CLICKUP_TEAM_ID=YOUR_ID \
+  --env CLICKUP_MCP_MODE=read-minimal \
+  --env MAX_IMAGES=16 \
+  --env MAX_RESPONSE_SIZE_MB=4
+```
+
+Alternatively, type `/mcp` within Factory droid to open an interactive UI for managing MCP servers.
+
+> Factory can handle extensive image context, thus the recommended increased limits.
+
+> Note the `CLICKUP_MCP_MODE=read-minimal`. This is recommended for coding workflows, but feel free to use one of the other modes.
+
+Learn more about Factory's MCP configuration in the [Factory documentation](https://docs.factory.ai/cli/configuration/mcp).
+
 ## MCP Modes & Available Tools
 
 The ClickUp MCP supports three operational modes to balance functionality, security, and performance:
