@@ -13,6 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Fixed image MIME type detection by inspecting binary magic bytes instead of trusting HTTP headers or fallback values
 
+### Security
+- Bumped `@modelcontextprotocol/sdk` to `^1.29.0` to address ReDoS (GHSA-8r9q-7v3j-jr4g), cross-client data leak (GHSA-345p-7cg4-v4c7), and missing default DNS rebinding protection (GHSA-w48q-cv73-mx4w)
+- Bumped `@anthropic-ai/mcpb` (devDep) to `^2.1.2`
+- Bumped `undici` (devDep) to `^7.25.0` to address WebSocket/HTTP smuggling and decompression DoS advisories (stays on the 7.x line to keep the test `MockAgent` API)
+- Bumped `zod` to `^4.1.8` (required by the new SDK's compat layer; also resolves a TypeScript deep-instantiation error)
+- Added `tmp` override to `^0.2.5` to clear the remaining transitive low-severity advisory (GHSA-52f5-9888-hmc6) coming through the `mcpb` build tool
+- `npm audit` is now clean (0 vulnerabilities)
+
 ## [1.6.0] - 2025-11-25
 
 ### Added
