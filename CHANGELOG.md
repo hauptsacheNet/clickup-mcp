@@ -7,12 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- Added comparison table in README showing differences between this MCP and the official ClickUp MCP
-
-### Fixed
-- Fixed image MIME type detection by inspecting binary magic bytes instead of trusting HTTP headers or fallback values
-
 ### Security
 - Bumped `@modelcontextprotocol/sdk` to `^1.29.0` to address ReDoS (GHSA-8r9q-7v3j-jr4g), cross-client data leak (GHSA-345p-7cg4-v4c7), and missing default DNS rebinding protection (GHSA-w48q-cv73-mx4w)
 - Bumped `@anthropic-ai/mcpb` (devDep) to `^2.1.2`
@@ -21,6 +15,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `tmp` override to `^0.2.5` to clear the remaining transitive low-severity advisory (GHSA-52f5-9888-hmc6) coming through the `mcpb` build tool
 - `npm audit` is now clean (0 vulnerabilities)
 - Added `.npmrc` with `min-release-age=7` so `npm install` skips dependency versions less than 7 days old. Mitigates fast-moving supply-chain attacks (à la Shai-Hulud / the March 2026 axios compromise) where malicious uploads are typically detected and yanked within hours. Requires npm CLI ≥ 11.10.0 to take effect (silently ignored on older npm; Node 24 ships with it, Node 22 LTS users need `npm i -g npm@latest`). Only affects `npm install` resolution — `npm ci` continues to install exactly from `package-lock.json`.
+
+### Changed
+- Updated `cli.ts` to work with the new MCP SDK / zod 4 internals (registered-tool `callback` → `handler`, handler now takes an `extra` argument, zod schema internals moved from `_def` to `_zod.def`)
+
+## [1.6.2] - 2026-04-17
+
+### Added
+- Time entry description is now included in time-tracking output ([#16](https://github.com/hauptsacheNet/clickup-mcp/pull/16) by @sebastienheyd)
+
+### Fixed
+- Fixed `searchTasks` crash when `getSpaceDetails` returns 401 ([#21](https://github.com/hauptsacheNet/clickup-mcp/pull/21) by @stucchi)
+
+## [1.6.1] - 2026-02-01
+
+### Added
+- Added comparison table in README showing differences between this MCP and the official ClickUp MCP
+
+### Fixed
+- Fixed image MIME type detection by inspecting binary magic bytes instead of trusting HTTP headers or fallback values
 
 ## [1.6.0] - 2025-11-25
 
