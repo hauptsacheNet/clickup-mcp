@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bumped `zod` to `^4.1.8` (required by the new SDK's compat layer; also resolves a TypeScript deep-instantiation error)
 - Added `tmp` override to `^0.2.5` to clear the remaining transitive low-severity advisory (GHSA-52f5-9888-hmc6) coming through the `mcpb` build tool
 - `npm audit` is now clean (0 vulnerabilities)
+- Added `.npmrc` with `min-release-age=7` so `npm install` skips dependency versions less than 7 days old. Mitigates fast-moving supply-chain attacks (à la Shai-Hulud / the March 2026 axios compromise) where malicious uploads are typically detected and yanked within hours. Requires npm CLI ≥ 11.10.0 to take effect (silently ignored on older npm; Node 24 ships with it, Node 22 LTS users need `npm i -g npm@latest`). Only affects `npm install` resolution — `npm ci` continues to install exactly from `package-lock.json`.
 
 ## [1.6.0] - 2025-11-25
 
