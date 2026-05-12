@@ -3,6 +3,33 @@ import 'dotenv/config'; // Load .env file
 import { z } from "zod";
 import { serverPromise } from "./index";
 
+function extractShape(schema: any): Record<string, any> | null {
+  if (!schema) return null;
+  if (schema._def?.shape) {
+    return typeof schema._def.shape === "function" ? schema._def.shape() : schema._def.shape;
+  }
+  if (schema._zod?.def?.shape) {
+    return schema._zod.def.shape;
+  }
+  if (schema.shape) {
+    return typeof schema.shape === "function" ? schema.shape() : schema.shape;
+  }
+  return null;
+}
+
+function safeParseSchema(schema: any, data: unknown):
+  | { success: true; data: unknown }
+  | { success: false; error: any } {
+  if (typeof schema.safeParse === "function") {
+    return schema.safeParse(data);
+  }
+  if (schema._zod) {
+    const { safeParse } = require("zod/v4/core") as typeof import("zod/v4/core");
+    return safeParse(schema, data) as any;
+  }
+  return { success: true, data };
+}
+
 async function main() {
   // Wait for server initialization to complete
   const server = await serverPromise;
@@ -94,25 +121,23 @@ async function main() {
     console.error("\nAvailable tools:");
     
     // @ts-ignore - Accessing private property for testing purposes
-    const tools = server._registeredTools as Record<string, {
-      description: string;
-      inputSchema: z.ZodObject<any>;
-      callback: (params: any) => Promise<any>;
-    }>;
-    
+    const tools = server._registeredTools as Record<string, any>;
+
     if (tools) {
       for (const [name, tool] of Object.entries(tools)) {
         console.error(`  - ${name}: ${tool.description}`);
-        if (tool.inputSchema && tool.inputSchema._def && typeof tool.inputSchema._def.shape === 'function') { 
+        const shape = extractShape(tool.inputSchema);
+        if (shape) {
           console.error("    Parameters:");
-          const shape = tool.inputSchema._def.shape();
           for (const [paramName, schema] of Object.entries(shape)) {
-            // @ts-ignore - Accessing schema description
-            const description = schema.description || "No description";
+            const description = (schema as any)?.description
+              ?? (schema as any)?._def?.description
+              ?? (schema as any)?._zod?.def?.description
+              ?? "No description";
             console.error(`      - ${paramName}: ${description}`);
           }
         } else {
-          console.error("    Parameters: None"); 
+          console.error("    Parameters: None");
         }
         console.error("");
       }
@@ -150,43 +175,40 @@ async function main() {
 
   try {
     // @ts-ignore - Accessing private property for testing purposes
-    const tools = server._registeredTools as Record<string, {
-      description: string;
-      inputSchema: z.ZodObject<any>;
-      callback: (params: any) => Promise<any>;
-    }>;
-    
+    const tools = server._registeredTools as Record<string, any>;
+
     if (!tools || !tools[toolName]) {
       console.error(`Unknown tool: ${toolName}`);
       process.exit(1);
     }
-    
+
     const tool = tools[toolName];
-    
-    // Validate parameters using the tool's schema, if it exists
+    const handler = tool.handler ?? tool.callback;
+
     if (tool.inputSchema) {
-      try {
-        tool.inputSchema.parse(params);
-      } catch (error) {
-        const validationError = error as z.ZodError;
-        console.error("Parameter validation error:", validationError.message);
+      const result = safeParseSchema(tool.inputSchema, params);
+      if (!result.success) {
+        console.error("Parameter validation error:", JSON.stringify(result.error?.issues ?? result.error, null, 2));
         process.exit(1);
       }
     } else if (Object.keys(params).length > 0) {
-      // If there's no schema, but parameters were provided, it's an error
       console.error(`Error: Tool '${toolName}' does not accept any parameters, but parameters were provided.`);
       process.exit(1);
     }
-    
-    // Mock environment variables for testing if they're not set
+
     if (!process.env.CLICKUP_API_KEY || !process.env.CLICKUP_TEAM_ID) {
       console.warn("Warning: Using mock API credentials. This will not return real data.");
       process.env.CLICKUP_API_KEY = process.env.CLICKUP_API_KEY || 'test_api_key';
       process.env.CLICKUP_TEAM_ID = process.env.CLICKUP_TEAM_ID || 'test_team_id';
     }
-    
-    // Call the tool's callback function
-    const result = await tool.callback(params);
+
+    const extra = {
+      signal: new AbortController().signal,
+      requestId: "cli",
+      sendNotification: async () => {},
+      sendRequest: async () => ({}),
+    } as any;
+    const result = await handler(params, extra);
     console.dir(result.content);
     process.exit(0);
   } catch (error: unknown) {
