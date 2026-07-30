@@ -245,48 +245,82 @@ export async function uploadTaskAttachment(
   return attachment;
 }
 
-/** One markdown image reference and what became of it */
-export interface ImageUploadResult {
+/** A markdown image whose source resolved to uploadable bytes or an existing attachment */
+export interface ResolvedMarkdownImage {
   /** The original `src` as written in the markdown */
   src: string;
-  /** Attachment to embed, or null when the upload failed */
-  attachment: ClickUpUploadedAttachment | null;
-  /** Reason the upload failed, for reporting back to the caller */
-  error?: string;
+  alt: string;
+  resolved: ResolvedImageSource;
+}
+
+/** One markdown image reference that could not be used, and why */
+export interface ImageFailure {
+  src: string;
+  error: string;
 }
 
 /**
- * Upload every image referenced in the markdown to the given task.
+ * Phase 1 of attaching images: resolve every source without writing anything.
+ *
+ * Reads local files, downloads http(s) URLs, decodes data URIs and validates
+ * magic bytes and size. Failures are collected instead of thrown so the caller
+ * can report every broken reference at once - and abort before anything is
+ * posted to ClickUp. Identical sources are resolved once.
+ */
+export async function resolveMarkdownImages(
+  images: { src: string; alt: string }[],
+  baseDir: string = process.cwd()
+): Promise<{ resolved: ResolvedMarkdownImage[]; failures: ImageFailure[] }> {
+  const resolved: ResolvedMarkdownImage[] = [];
+  const failures: ImageFailure[] = [];
+  const seen = new Set<string>();
+
+  for (const { src, alt } of images) {
+    if (seen.has(src)) {
+      continue;
+    }
+    seen.add(src);
+
+    try {
+      resolved.push({ src, alt, resolved: await resolveImageSource(src, baseDir) });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "unknown error";
+      console.error(`Cannot use image "${src}": ${message}`);
+      failures.push({ src, error: message });
+    }
+  }
+
+  return { resolved, failures };
+}
+
+/** A successfully uploaded (or reused) attachment for one markdown source */
+export interface UploadedMarkdownImage {
+  src: string;
+  attachment: ClickUpUploadedAttachment;
+}
+
+/**
+ * Phase 2: upload the resolved images to the task.
  *
  * Uploads run sequentially: a typical comment has a handful of screenshots, and
  * N uploads plus one write call stays well inside ClickUp's 100 calls/minute.
- * A failing image never fails the whole batch - the caller writes the comment
- * anyway and reports which images did not make it.
+ * Stops at the first upload error - an API failure is unlikely to heal mid-batch,
+ * and everything uploaded so far is returned so the caller can tell a retry to
+ * reference those CDN URLs directly instead of uploading again.
  */
-export async function uploadMarkdownImages(
+export async function uploadResolvedImages(
   taskId: string,
-  images: { src: string; alt: string }[],
-  baseDir: string = process.cwd()
-): Promise<ImageUploadResult[]> {
-  const results: ImageUploadResult[] = [];
-  // Identical sources are uploaded once and reused.
-  const seen = new Map<string, ImageUploadResult>();
+  images: ResolvedMarkdownImage[]
+): Promise<{ uploaded: UploadedMarkdownImage[]; failure: ImageFailure | null }> {
+  const uploaded: UploadedMarkdownImage[] = [];
 
-  for (const { src, alt } of images) {
-    const cached = seen.get(src);
-    if (cached) {
-      results.push(cached);
-      continue;
-    }
-
-    let result: ImageUploadResult;
+  for (const { src, alt, resolved } of images) {
     try {
-      const resolved = await resolveImageSource(src, baseDir);
       if (resolved.kind === "existing") {
         // Already on ClickUp's CDN - synthesise the minimal attachment shape so
         // the fragment builder has something to work with.
         const name = decodeURIComponent(basename(new URL(resolved.url).pathname));
-        result = {
+        uploaded.push({
           src,
           attachment: {
             id: name,
@@ -298,7 +332,7 @@ export async function uploadMarkdownImages(
             thumbnail_medium: resolved.url,
             thumbnail_large: resolved.url,
           },
-        };
+        });
       } else {
         const filename = captionToFilename(alt, resolved.suggestedName);
         const attachment = await uploadTaskAttachment(
@@ -307,33 +341,25 @@ export async function uploadMarkdownImages(
           resolved.bytes,
           resolved.mimeType
         );
-        result = { src, attachment };
+        uploaded.push({ src, attachment });
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : "unknown error";
       console.error(`Failed to attach image "${src}": ${message}`);
-      result = { src, attachment: null, error: message };
+      return { uploaded, failure: { src, error: message } };
     }
-
-    seen.set(src, result);
-    results.push(result);
   }
 
-  return results;
+  return { uploaded, failure: null };
 }
 
-/**
- * Map from markdown `src` to the attachment that should be embedded for it.
- * Sources whose upload failed are absent, so the converters fall back to text.
- */
+/** Map from markdown `src` to the attachment that should be embedded for it. */
 export function toAttachmentMap(
-  results: ImageUploadResult[]
+  uploaded: UploadedMarkdownImage[]
 ): Map<string, ClickUpUploadedAttachment> {
   const map = new Map<string, ClickUpUploadedAttachment>();
-  for (const result of results) {
-    if (result.attachment) {
-      map.set(result.src, result.attachment);
-    }
+  for (const { src, attachment } of uploaded) {
+    map.set(src, attachment);
   }
   return map;
 }

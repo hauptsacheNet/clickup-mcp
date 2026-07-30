@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.1] - 2026-07-31
+
+### Changed
+- **Image failures now abort the write instead of degrading it.** A broken image reference (missing file, dead URL, file that is not a real image, oversized upload) makes `addComment`, `createTask` and `updateTask` fail with a per-image error report *before* anything is written - no comment is posted, no task is created or modified. The caller can fix the markdown and retry without creating duplicates. Previously the write went through anyway with the image replaced by its caption and only a WARNING in the response (and before 1.7.0, images were silently dropped with no trace at all).
+- `createTask` resolves and validates all description images before creating the task. Only an upload API failure after creation is reported as a WARNING, since the task already exists at that point.
+- When an upload fails halfway through a batch, the error lists the images that were already uploaded with their CDN URLs, so a retry can reference those URLs directly instead of uploading them again.
+
+### Added
+- Tests for the failure paths: missing local file, non-image file, unreachable http(s) URL, upload API error with partial success, and abort behaviour of all three write tools.
+
 ## [1.7.0] - 2026-07-30
 
 ### Added

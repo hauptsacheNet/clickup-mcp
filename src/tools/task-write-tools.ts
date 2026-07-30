@@ -8,7 +8,13 @@ import {
   normalizeImageDestinations,
   rewriteMarkdownImageUrls,
 } from "../clickup-text";
-import { ImageUploadResult, toAttachmentMap, uploadMarkdownImages } from "../shared/attachments";
+import {
+  ResolvedMarkdownImage,
+  UploadedMarkdownImage,
+  resolveMarkdownImages,
+  toAttachmentMap,
+  uploadResolvedImages,
+} from "../shared/attachments";
 
 /**
  * Shared wording for the image support of every markdown field in this file.
@@ -22,15 +28,19 @@ const IMAGE_SUPPORT_HINT = [
 ].join("\n");
 
 /**
- * Upload every image referenced in a markdown field and report what failed.
- * Never throws: a broken image must not cost the user their comment or task.
+ * Phase 1 of image handling: parse the markdown and resolve every image source
+ * (read files, download URLs, decode data URIs) WITHOUT writing anything.
+ *
+ * Throws when any reference is unusable, listing every broken source at once.
+ * Nothing has been posted to ClickUp when this throws, so the caller's generic
+ * error path returns the report and the client can fix the markdown and retry.
  */
-async function prepareMarkdownImages(
-  taskId: string,
-  markdown: string | undefined
-): Promise<{ results: ImageUploadResult[]; failures: string[]; markdown: string }> {
+async function resolveImagesOrAbort(
+  markdown: string | undefined,
+  abortNotice: string
+): Promise<{ markdown: string; images: ResolvedMarkdownImage[] }> {
   if (!markdown) {
-    return { results: [], failures: [], markdown: markdown ?? "" };
+    return { markdown: markdown ?? "", images: [] };
   }
 
   // Normalise first, then use the same string for collecting and converting - the
@@ -39,15 +49,55 @@ async function prepareMarkdownImages(
 
   const sources = collectMarkdownImageSources(normalized);
   if (sources.length === 0) {
-    return { results: [], failures: [], markdown: normalized };
+    return { markdown: normalized, images: [] };
   }
 
-  const results = await uploadMarkdownImages(taskId, sources);
-  const failures = results
-    .filter((result) => !result.attachment)
-    .map((result) => `${result.src}: ${result.error || "unknown error"}`);
+  const { resolved, failures } = await resolveMarkdownImages(sources);
+  if (failures.length > 0) {
+    throw new Error(
+      [
+        `${failures.length} image reference(s) could not be used, so ${abortNotice}:`,
+        ...failures.map((failure) => `  - ${failure.src}: ${failure.error}`),
+        `Fix or remove these image references and retry.`,
+      ].join("\n")
+    );
+  }
 
-  return { results, failures, markdown: normalized };
+  return { markdown: normalized, images: resolved };
+}
+
+/**
+ * Phase 2: upload the resolved images to the task.
+ *
+ * Throws on the first upload failure. Everything uploaded before the failure is
+ * listed with its CDN URL so a retry can reference those URLs directly (existing
+ * ClickUp URLs are embedded without re-uploading).
+ */
+async function uploadImagesOrAbort(
+  taskId: string,
+  images: ResolvedMarkdownImage[],
+  abortNotice: string
+): Promise<UploadedMarkdownImage[]> {
+  if (images.length === 0) {
+    return [];
+  }
+
+  const { uploaded, failure } = await uploadResolvedImages(taskId, images);
+  if (failure) {
+    const lines = [
+      `Uploading image "${failure.src}" failed, so ${abortNotice}:`,
+      `  ${failure.error}`,
+    ];
+    if (uploaded.length > 0) {
+      lines.push(
+        `${uploaded.length} image(s) were already uploaded to task ${taskId} before the failure - on retry, reference these URLs directly to avoid duplicate uploads:`,
+        ...uploaded.map((u) => `  - ${u.attachment.name}: ${u.attachment.url}`)
+      );
+    }
+    throw new Error(lines.join("\n"));
+  }
+
+  return uploaded;
 }
 
 /**
@@ -63,26 +113,14 @@ function summarizeMarkdownForEcho(markdown: string): string {
   );
 }
 
-/** Report successfully attached images so the caller can link to them later */
-function formatAttachedImages(results: ImageUploadResult[]): string[] {
-  const attached = results.filter((result) => result.attachment);
-  if (attached.length === 0) {
+/** Report successfully attached images so the caller can verify and link to them */
+function formatAttachedImages(uploaded: UploadedMarkdownImage[]): string[] {
+  if (uploaded.length === 0) {
     return [];
   }
   return [
-    `images_attached: ${attached.length}`,
-    ...attached.map((result) => `  - ${result.attachment!.name} (${result.attachment!.url})`),
-  ];
-}
-
-/** Render upload failures as response lines so they are never silently swallowed */
-function formatImageFailures(failures: string[]): string[] {
-  if (failures.length === 0) {
-    return [];
-  }
-  return [
-    `WARNING: ${failures.length} image(s) could not be attached and were replaced by their caption:`,
-    ...failures.map((failure) => `  - ${failure}`),
+    `images_attached: ${uploaded.length}`,
+    ...uploaded.map((u) => `  - ${u.attachment.name} (${u.attachment.url})`),
   ];
 }
 
@@ -129,12 +167,16 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
     },
     async ({ task_id, comment }) => {
       try {
-        // Upload referenced images first - the fragments need the attachment objects
-        // from the upload response, a bare URL renders as an empty tile.
-        const { results, failures, markdown } = await prepareMarkdownImages(task_id, comment);
+        // Resolve and upload referenced images first - the fragments need the
+        // attachment objects from the upload response, a bare URL renders as an
+        // empty tile. Any image problem aborts BEFORE the comment is posted, so
+        // the caller can fix the markdown and retry without creating duplicates.
+        const abortNotice = "the comment was NOT posted";
+        const { markdown, images } = await resolveImagesOrAbort(comment, abortNotice);
+        const uploaded = await uploadImagesOrAbort(task_id, images, abortNotice);
 
         // Convert markdown to ClickUp formatted blocks
-        const commentBlocks = convertMarkdownToClickUpBlocks(markdown, toAttachmentMap(results));
+        const commentBlocks = convertMarkdownToClickUpBlocks(markdown, toAttachmentMap(uploaded));
 
         const requestBody = {
           comment: commentBlocks,
@@ -168,8 +210,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
                 `comment: ${summarizeMarkdownForEcho(comment)}`,
                 `date: ${timestampToIso(commentData.date || Date.now())}`,
                 `user: ${commentData.user?.username || 'Current user'}`,
-                ...formatAttachedImages(results),
-                ...formatImageFailures(failures),
+                ...formatAttachedImages(uploaded),
               ].join('\n')
             }
           ],
@@ -249,6 +290,23 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
 
         const taskData = await taskResponse.json();
 
+        // Resolve and upload description images FIRST - an image problem must
+        // abort before dependencies, tags or the task itself are touched, so the
+        // caller can fix the markdown and retry the whole call cleanly.
+        let appendedDescription: string | undefined;
+        let uploadedImages: UploadedMarkdownImage[] = [];
+        if (append_description) {
+          const abortNotice = "the task was NOT updated";
+          const prepared = await resolveImagesOrAbort(append_description, abortNotice);
+          uploadedImages = await uploadImagesOrAbort(task_id, prepared.images, abortNotice);
+          // Descriptions render plain markdown, so no image fragments are involved
+          // here - the local paths are simply swapped for the CDN URLs.
+          appendedDescription = rewriteMarkdownImageUrls(
+            prepared.markdown,
+            toAttachmentMap(uploadedImages)
+          );
+        }
+
         // Handle dependencies separately since they need individual API calls
         let dependencyUpdateResults: string[] = [];
         if (blocking !== undefined || waiting_on !== undefined || linked_tasks !== undefined) {
@@ -311,23 +369,11 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
 
         // Handle append-only description update with markdown support
         let finalDescription: string | undefined;
-        let imageResults: ImageUploadResult[] = [];
-        let imageFailures: string[] = [];
-        if (append_description) {
-          // Upload first, then swap the local paths for CDN URLs. Descriptions render
-          // plain markdown, so no image fragments are involved here.
-          const prepared = await prepareMarkdownImages(task_id, append_description);
-          imageResults = prepared.results;
-          imageFailures = prepared.failures;
-          const appended = rewriteMarkdownImageUrls(
-            prepared.markdown,
-            toAttachmentMap(imageResults)
-          );
-
+        if (appendedDescription !== undefined) {
           const currentDescription = taskData.markdown_description || "";
           const timestamp = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
           const separator = currentDescription.trim() ? "\n\n---\n" : "";
-          finalDescription = currentDescription + separator + `**Edit (${timestamp}):** ${appended}`;
+          finalDescription = currentDescription + separator + `**Edit (${timestamp}):** ${appendedDescription}`;
         }
 
         // Build update body without tags (they're handled separately)
@@ -401,8 +447,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
           responseLines.push('tag_warnings: ' + tagUpdateResults.join('; '));
         }
 
-        responseLines.push(...formatAttachedImages(imageResults));
-        responseLines.push(...formatImageFailures(imageFailures));
+        responseLines.push(...formatAttachedImages(uploadedImages));
 
         return {
           content: [
@@ -471,6 +516,15 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
     },
     async ({ list_id, name, description, status, priority, due_date, start_date, time_estimate, tags, parent_task_id, assignees }) => {
       try {
+        // Resolve description images BEFORE creating the task: a broken reference
+        // (missing file, dead URL, non-image) must not leave a half-finished task
+        // behind. Uploading has to wait until the task exists, though - ClickUp
+        // attachments always belong to a task.
+        const { markdown: normalizedDescription, images } = await resolveImagesOrAbort(
+          description,
+          "the task was NOT created"
+        );
+
         const userData = await getCurrentUser();
         const currentUserId = userData.user.id;
 
@@ -501,12 +555,19 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
 
         // Images can only be attached once the task exists, so the description is
         // written first with its original sources and then rewritten to the CDN URLs.
-        const {
-          results: imageResults,
-          failures: imageFailures,
-          markdown: normalizedDescription,
-        } = await prepareMarkdownImages(createdTask.id, description);
-        const attachmentMap = toAttachmentMap(imageResults);
+        // At this point every source resolved successfully - only the upload API
+        // itself can still fail, and then the task already exists, so that is
+        // reported as a warning instead of pretending the task was not created.
+        const imageWarnings: string[] = [];
+        const { uploaded, failure: uploadFailure } = await uploadResolvedImages(createdTask.id, images);
+        if (uploadFailure) {
+          console.error(`Failed to attach image "${uploadFailure.src}": ${uploadFailure.error}`);
+          imageWarnings.push(
+            `WARNING: the task was created, but uploading image "${uploadFailure.src}" failed: ${uploadFailure.error}`,
+            `The description still references the original image source. Fix the problem and add the image via updateTask.`
+          );
+        }
+        const attachmentMap = toAttachmentMap(uploaded);
         if (description && attachmentMap.size > 0) {
           const rewritten = rewriteMarkdownImageUrls(normalizedDescription, attachmentMap);
           if (rewritten !== description) {
@@ -521,8 +582,8 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
             if (!descriptionResponse.ok) {
               // The task itself exists - report the problem instead of failing the call.
               console.error(`Failed to write image URLs into description: ${descriptionResponse.status}`);
-              imageFailures.push(
-                `description update failed (${descriptionResponse.status} ${descriptionResponse.statusText}) - images are attached but not embedded`
+              imageWarnings.push(
+                `WARNING: description update failed (${descriptionResponse.status} ${descriptionResponse.statusText}) - the images are attached to the task but not embedded in the description`
               );
             }
           }
@@ -532,8 +593,8 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
           list_id, name, description, status, priority, due_date, start_date, time_estimate, tags, parent_task_id, assignees
         }, userData);
 
-        responseLines.push(...formatAttachedImages(imageResults));
-        responseLines.push(...formatImageFailures(imageFailures));
+        responseLines.push(...formatAttachedImages(uploaded));
+        responseLines.push(...imageWarnings);
 
         return {
           content: [
