@@ -7,7 +7,7 @@ import { Buffer } from "buffer";
  * Detect MIME type from image binary data using magic bytes (file signatures)
  * Returns null if the format is not recognized
  */
-function detectMimeTypeFromBuffer(buffer: ArrayBuffer): string | null {
+export function detectMimeTypeFromBuffer(buffer: ArrayBuffer): string | null {
   const bytes = new Uint8Array(buffer);
   if (bytes.length < 12) return null;
 

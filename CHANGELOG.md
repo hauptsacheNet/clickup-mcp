@@ -7,11 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-07-30
+
 ### Added
+- **Inline image upload** - `![caption](path)` in `addComment`, `createTask` and `updateTask` now uploads the image and embeds it in the ticket.
+  Accepted sources: local file paths, `data:` URIs, http(s) URLs, and existing ClickUp attachment URLs (reused without re-uploading).
+  Because the server runs locally, a screenshot can be referenced by path instead of being inlined as base64, which costs orders of magnitude fewer tokens.
+  The caption becomes the attachment filename, which is what ClickUp displays beneath the image.
+  Only real PNG/JPEG/GIF/WebP files are uploaded (verified via magic bytes); a failing image is reported in the response instead of aborting the write.
+- New `MAX_UPLOAD_SIZE_MB` environment variable (default 10) to cap the size of a single uploaded image
+- New `npm run smoke` protocol smoke test that drives the built server over real MCP stdio (initialize, tools/list, tool schemas) and optionally posts a comment with an image. `npm run cli` calls tool callbacks directly and never covered this layer.
 - Added comparison table in README showing differences between this MCP and the official ClickUp MCP
 
 ### Fixed
 - Fixed image MIME type detection by inspecting binary magic bytes instead of trusting HTTP headers or fallback values
+- Images in comments are no longer silently dropped - `![](...)` previously vanished without a warning because mdast image nodes were not handled
+- Fixed the CLI discarding any multi-line parameter value (the `key=value` pattern did not match across newlines), which made markdown impossible to test via `npm run cli`
+- Fixed the test suite never reaching its mocks: `undici`'s `MockAgent` cannot intercept Node's built-in global `fetch`, so every test made real network calls and failed on DNS. 17 of 31 tests were failing before this fix
 
 ## [1.6.0] - 2025-11-25
 

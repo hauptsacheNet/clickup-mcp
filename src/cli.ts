@@ -127,7 +127,9 @@ async function main() {
   // Parse parameters
   for (let i = 1; i < args.length; i++) {
     const arg = args[i];
-    const match = arg.match(/^([^=]+)=(.*)$/);
+    // The `s` flag matters: without it `.` stops at a newline and multi-line values
+    // (markdown descriptions, comments with images) are silently skipped entirely.
+    const match = arg.match(/^([^=]+)=(.*)$/s);
     
     if (match) {
       const [, key, value] = match;

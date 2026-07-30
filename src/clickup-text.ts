@@ -489,20 +489,180 @@ export interface ClickUpCommentBlock {
     };
     indent?: number; // Nesting level for lists (1 = first level nest, 2 = second, etc.)
     'block-id'?: string;
+    alt?: string; // Alt text on image fragments
   };
   list?: {
     list: 'bullet' | 'ordered' | 'unchecked' | 'checked';
   };
+  /**
+   * Present on image fragments. ClickUp only renders a preview when this holds the
+   * complete attachment object from the upload response - a bare URL string produces
+   * an empty placeholder tile.
+   */
+  image?: {
+    id?: string;
+    name?: string;
+    title?: string;
+    extension?: string;
+    url: string;
+    thumbnail_small?: string;
+    thumbnail_medium?: string;
+    thumbnail_large?: string;
+    width?: number;
+    height?: number;
+  };
+}
+
+/**
+ * Minimal shape needed to embed an already-uploaded attachment as an image fragment
+ */
+export interface EmbeddableAttachment {
+  id?: string;
+  name?: string;
+  title?: string;
+  extension?: string;
+  url: string;
+  thumbnail_small?: string;
+  thumbnail_medium?: string;
+  thumbnail_large?: string;
+  width?: number;
+  height?: number;
+  [key: string]: any;
+}
+
+/**
+ * Build the image fragment ClickUp needs to render an inline image in a comment.
+ * `title`/`text` carry the caption; the rest is copied straight from the upload response.
+ */
+export function buildImageFragment(
+  attachment: EmbeddableAttachment,
+  caption: string
+): ClickUpCommentBlock {
+  const label = caption || attachment.name || 'image';
+  const fragment: ClickUpCommentBlock = {
+    type: 'image',
+    text: label,
+    image: {
+      id: attachment.id,
+      name: attachment.name,
+      title: label,
+      extension: attachment.extension,
+      url: attachment.url,
+      thumbnail_small: attachment.thumbnail_small,
+      thumbnail_medium: attachment.thumbnail_medium,
+      thumbnail_large: attachment.thumbnail_large,
+      width: attachment.width,
+      height: attachment.height,
+    },
+  };
+  if (caption) {
+    fragment.attributes = { alt: caption };
+  }
+  return fragment;
+}
+
+/**
+ * Wrap image destinations that contain spaces in angle brackets.
+ *
+ * CommonMark rejects a bare destination with spaces, so `![x](/tmp/Screen Shot.png)`
+ * is not an image at all - it would silently stay literal text and never be uploaded.
+ * Screenshot filenames have spaces constantly ("Screenshot 2026-07-27 at 14.30.png"),
+ * so normalising to the `<...>` form is what makes the obvious thing work.
+ */
+export function normalizeImageDestinations(markdown: string): string {
+  return markdown.replace(
+    /!\[([^\]]*)\]\(([^)\n]*)\)/g,
+    (match, alt: string, inner: string) => {
+      const trimmed = inner.trim();
+      // Already bracketed, or nothing to fix
+      if (trimmed.startsWith('<') || trimmed.includes('>')) {
+        return match;
+      }
+
+      // Split off an optional markdown title: dest "title" / 'title'
+      const titleMatch = trimmed.match(/^(.*?)(\s+(?:"[^"]*"|'[^']*'))$/s);
+      const dest = titleMatch ? titleMatch[1] : trimmed;
+      const title = titleMatch ? titleMatch[2] : '';
+
+      if (!dest || !/\s/.test(dest)) {
+        return match;
+      }
+      return `![${alt}](<${dest}>${title})`;
+    }
+  );
+}
+
+/**
+ * Collect every image reference in a markdown document, in document order.
+ * Callers use this to know what needs uploading before converting.
+ */
+export function collectMarkdownImageSources(markdown: string): { src: string; alt: string }[] {
+  const images: { src: string; alt: string }[] = [];
+
+  try {
+    const tree = unified()
+      .use(remarkParse)
+      .use(remarkGfm)
+      .parse(markdown) as Root;
+
+    const visit = (nodes: any[]): void => {
+      for (const node of nodes) {
+        if (node.type === 'image' && typeof node.url === 'string') {
+          images.push({ src: node.url, alt: typeof node.alt === 'string' ? node.alt : '' });
+        } else if (Array.isArray(node.children)) {
+          visit(node.children);
+        }
+      }
+    };
+    visit(tree.children as any[]);
+  } catch (error) {
+    console.error('Failed to collect markdown images:', error);
+  }
+
+  return images;
+}
+
+/**
+ * Replace image sources in markdown with their uploaded ClickUp URLs.
+ *
+ * Used for task descriptions: `markdown_description` renders `![alt](url)` directly,
+ * so descriptions need no fragment handling - only the URL has to be swapped.
+ * Images without an upload keep their original source untouched.
+ */
+export function rewriteMarkdownImageUrls(
+  markdown: string,
+  attachmentsBySrc: Map<string, EmbeddableAttachment>
+): string {
+  if (attachmentsBySrc.size === 0) {
+    return markdown;
+  }
+
+  return markdown.replace(
+    /!\[([^\]]*)\]\(\s*(<[^>]*>|[^)\s]+)([^)]*)\)/g,
+    (match, alt: string, rawSrc: string, trailing: string) => {
+      const src = rawSrc.startsWith('<') && rawSrc.endsWith('>') ? rawSrc.slice(1, -1) : rawSrc;
+      const attachment = attachmentsBySrc.get(src);
+      if (!attachment) {
+        return match;
+      }
+      return `![${alt}](${attachment.url}${trailing})`;
+    }
+  );
 }
 
 /**
  * Convert markdown text to ClickUp comment blocks format using remark
- * Supports: headers, bold, italic, code, links, lists, blockquotes, code blocks
+ * Supports: headers, bold, italic, code, links, lists, blockquotes, code blocks, images
  *
  * @param markdown The markdown text to convert
+ * @param attachmentsBySrc Uploaded attachments keyed by the markdown `src` they came from.
+ *   Images without an entry degrade to a link so their information is not lost.
  * @returns Array of ClickUp comment blocks
  */
-export function convertMarkdownToClickUpBlocks(markdown: string): ClickUpCommentBlock[] {
+export function convertMarkdownToClickUpBlocks(
+  markdown: string,
+  attachmentsBySrc?: Map<string, EmbeddableAttachment>
+): ClickUpCommentBlock[] {
   const blocks: ClickUpCommentBlock[] = [];
 
   try {
@@ -513,7 +673,7 @@ export function convertMarkdownToClickUpBlocks(markdown: string): ClickUpComment
       .parse(markdown) as Root;
 
     // Walk the tree recursively
-    walkMdastNodes(tree.children, {}, blocks);
+    walkMdastNodes(tree.children, {}, blocks, 0, attachmentsBySrc);
 
   } catch (error) {
     console.error('Failed to parse markdown:', error);
@@ -535,7 +695,8 @@ function walkMdastNodes(
   nodes: Content[],
   inheritedAttrs: ClickUpCommentBlock['attributes'],
   blocks: ClickUpCommentBlock[],
-  depth: number = 0
+  depth: number = 0,
+  attachmentsBySrc?: Map<string, EmbeddableAttachment>
 ): void {
   for (let i = 0; i < nodes.length; i++) {
     const node = nodes[i];
@@ -544,14 +705,14 @@ function walkMdastNodes(
     switch (node.type) {
       case 'heading':
         // Process heading content with inline formatting
-        walkPhrasingContent((node as Heading).children, currentAttrs, blocks);
+        walkPhrasingContent((node as Heading).children, currentAttrs, blocks, attachmentsBySrc);
         // Add newline with header attribute
         blocks.push({ text: '\n', attributes: { header: (node as Heading).depth } });
         break;
 
       case 'paragraph':
         // Process paragraph content with inline formatting
-        walkPhrasingContent((node as Paragraph).children, currentAttrs, blocks);
+        walkPhrasingContent((node as Paragraph).children, currentAttrs, blocks, attachmentsBySrc);
         // Add newline unless it's the last node
         if (i < nodes.length - 1) {
           blocks.push({ text: '\n', attributes: {} });
@@ -564,7 +725,7 @@ function walkMdastNodes(
         const blockquoteChildren = (node as Blockquote).children;
         for (const child of blockquoteChildren) {
           if (child.type === 'paragraph') {
-            walkPhrasingContent((child as Paragraph).children, currentAttrs, blocks);
+            walkPhrasingContent((child as Paragraph).children, currentAttrs, blocks, attachmentsBySrc);
             blocks.push({ text: '\n', attributes: { blockquote: {} } });
           }
           // Note: Other child types (heading, list) are not supported by ClickUp blockquotes
@@ -588,7 +749,7 @@ function walkMdastNodes(
           for (const itemChild of listItem.children) {
             if (itemChild.type === 'paragraph') {
               // Process paragraph content with inline formatting
-              walkPhrasingContent((itemChild as Paragraph).children, currentAttrs, blocks);
+              walkPhrasingContent((itemChild as Paragraph).children, currentAttrs, blocks, attachmentsBySrc);
 
               // Add newline with list formatting and optional indent
               const listAttrs: ClickUpCommentBlock['attributes'] = {
@@ -603,7 +764,7 @@ function walkMdastNodes(
               blocks.push({ text: '\n', attributes: listAttrs });
             } else if (itemChild.type === 'list') {
               // Nested list - recursively process with increased depth
-              walkMdastNodes([itemChild], currentAttrs, blocks, depth + 1);
+              walkMdastNodes([itemChild], currentAttrs, blocks, depth + 1, attachmentsBySrc);
             }
           }
         }
@@ -629,7 +790,7 @@ function walkMdastNodes(
       default:
         // For any other block-level nodes, try to process children
         if ('children' in node && Array.isArray(node.children)) {
-          walkMdastNodes(node.children as Content[], currentAttrs, blocks, depth);
+          walkMdastNodes(node.children as Content[], currentAttrs, blocks, depth, attachmentsBySrc);
         }
         break;
     }
@@ -643,12 +804,33 @@ function walkMdastNodes(
 function walkPhrasingContent(
   nodes: PhrasingContent[],
   inheritedAttrs: ClickUpCommentBlock['attributes'],
-  blocks: ClickUpCommentBlock[]
+  blocks: ClickUpCommentBlock[],
+  attachmentsBySrc?: Map<string, EmbeddableAttachment>
 ): void {
   for (const node of nodes) {
     const currentAttrs = { ...inheritedAttrs };
 
     switch (node.type) {
+      case 'image': {
+        // An image node has neither `value` nor `children`, so without this case it
+        // would fall through to `default` and vanish silently.
+        const attachment = attachmentsBySrc?.get(node.url);
+        const caption = node.alt || '';
+        if (attachment) {
+          blocks.push(buildImageFragment(attachment, caption));
+        } else {
+          // Nothing was uploaded for this source - degrade to a link rather than
+          // dropping the reference, so the information survives.
+          const label = caption || node.url;
+          const isEmbeddable = /^https?:\/\//i.test(node.url);
+          blocks.push({
+            text: label,
+            attributes: isEmbeddable ? { ...currentAttrs, link: node.url } : currentAttrs,
+          });
+        }
+        break;
+      }
+
       case 'text':
         // Plain text node
         if (node.value) {
@@ -662,13 +844,13 @@ function walkPhrasingContent(
       case 'strong':
         // Bold text - recurse with bold attribute
         currentAttrs.bold = true;
-        walkPhrasingContent(node.children, currentAttrs, blocks);
+        walkPhrasingContent(node.children, currentAttrs, blocks, attachmentsBySrc);
         break;
 
       case 'emphasis':
         // Italic text - recurse with italic attribute
         currentAttrs.italic = true;
-        walkPhrasingContent(node.children, currentAttrs, blocks);
+        walkPhrasingContent(node.children, currentAttrs, blocks, attachmentsBySrc);
         break;
 
       case 'inlineCode':
@@ -685,7 +867,7 @@ function walkPhrasingContent(
       case 'link':
         // Link - recurse with link attribute
         currentAttrs.link = node.url;
-        walkPhrasingContent(node.children, currentAttrs, blocks);
+        walkPhrasingContent(node.children, currentAttrs, blocks, attachmentsBySrc);
         break;
 
       case 'break':
@@ -702,7 +884,7 @@ function walkPhrasingContent(
           });
         } else if ('children' in node && Array.isArray(node.children)) {
           // Recurse into children for other container nodes
-          walkPhrasingContent(node.children as PhrasingContent[], currentAttrs, blocks);
+          walkPhrasingContent(node.children as PhrasingContent[], currentAttrs, blocks, attachmentsBySrc);
         }
         break;
     }

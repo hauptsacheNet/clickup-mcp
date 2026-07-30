@@ -2,7 +2,89 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { CONFIG } from "../shared/config";
 import { getCurrentUser } from "../shared/utils";
-import { convertMarkdownToClickUpBlocks } from "../clickup-text";
+import {
+  collectMarkdownImageSources,
+  convertMarkdownToClickUpBlocks,
+  normalizeImageDestinations,
+  rewriteMarkdownImageUrls,
+} from "../clickup-text";
+import { ImageUploadResult, toAttachmentMap, uploadMarkdownImages } from "../shared/attachments";
+
+/**
+ * Shared wording for the image support of every markdown field in this file.
+ * Kept in one place so the tools stay consistent about what a client may pass.
+ */
+const IMAGE_SUPPORT_HINT = [
+  "IMAGES: Reference images with normal markdown - `![caption](/absolute/path/to/screenshot.png)`.",
+  "This server runs locally, so a local file path is read and uploaded automatically - never inline a screenshot as base64 when a path exists, it costs orders of magnitude more tokens.",
+  "Also accepted: `data:` URIs, http(s) URLs (downloaded and re-uploaded), and existing ClickUp attachment URLs (embedded as-is).",
+  "The caption becomes the attachment filename, which is what ClickUp displays beneath the image - so write a caption that reads well.",
+].join("\n");
+
+/**
+ * Upload every image referenced in a markdown field and report what failed.
+ * Never throws: a broken image must not cost the user their comment or task.
+ */
+async function prepareMarkdownImages(
+  taskId: string,
+  markdown: string | undefined
+): Promise<{ results: ImageUploadResult[]; failures: string[]; markdown: string }> {
+  if (!markdown) {
+    return { results: [], failures: [], markdown: markdown ?? "" };
+  }
+
+  // Normalise first, then use the same string for collecting and converting - the
+  // sources must line up with what the converter later looks up.
+  const normalized = normalizeImageDestinations(markdown);
+
+  const sources = collectMarkdownImageSources(normalized);
+  if (sources.length === 0) {
+    return { results: [], failures: [], markdown: normalized };
+  }
+
+  const results = await uploadMarkdownImages(taskId, sources);
+  const failures = results
+    .filter((result) => !result.attachment)
+    .map((result) => `${result.src}: ${result.error || "unknown error"}`);
+
+  return { results, failures, markdown: normalized };
+}
+
+/**
+ * Echo a markdown field back without repeating inline base64 payloads.
+ * Without this a single data-URI screenshot would be mirrored back into the
+ * response, costing as many tokens again as it did going in.
+ */
+function summarizeMarkdownForEcho(markdown: string): string {
+  return markdown.replace(
+    /(!\[[^\]]*\]\()data:([^;,)]+)[^)]*(\))/g,
+    (_match, prefix: string, mimeType: string, suffix: string) =>
+      `${prefix}[inline ${mimeType} data]${suffix}`
+  );
+}
+
+/** Report successfully attached images so the caller can link to them later */
+function formatAttachedImages(results: ImageUploadResult[]): string[] {
+  const attached = results.filter((result) => result.attachment);
+  if (attached.length === 0) {
+    return [];
+  }
+  return [
+    `images_attached: ${attached.length}`,
+    ...attached.map((result) => `  - ${result.attachment!.name} (${result.attachment!.url})`),
+  ];
+}
+
+/** Render upload failures as response lines so they are never silently swallowed */
+function formatImageFailures(failures: string[]): string[] {
+  if (failures.length === 0) {
+    return [];
+  }
+  return [
+    `WARNING: ${failures.length} image(s) could not be attached and were replaced by their caption:`,
+    ...failures.map((failure) => `  - ${failure}`),
+  ];
+}
 
 // Shared schemas for task parameters
 const taskNameSchema = z.string().min(1).describe("The name/title of the task");
@@ -23,6 +105,8 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
         "- Include task links when mentioning dependencies, related work, or follow-ups",
         "- Link to relevant lists, spaces, or other ClickUp entities when applicable",
         "PROGRESS UPDATES: Include current status, progress information, and next steps.",
+        IMAGE_SUPPORT_HINT,
+        "IMAGE LAYOUT: An image inside a numbered list breaks ClickUp's numbering. Write walkthrough steps as bold lines with a blank line before and after the image instead (`**1. Open the login page**`).",
         "If external links are provided, verify they are publicly accessible and incorporate relevant information.",
         "Check the task's current status - if it's in 'backlog' or similar inactive states, suggest moving it to an active status like 'in progress' when work is being done."
       ];
@@ -45,8 +129,12 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
     },
     async ({ task_id, comment }) => {
       try {
+        // Upload referenced images first - the fragments need the attachment objects
+        // from the upload response, a bare URL renders as an empty tile.
+        const { results, failures, markdown } = await prepareMarkdownImages(task_id, comment);
+
         // Convert markdown to ClickUp formatted blocks
-        const commentBlocks = convertMarkdownToClickUpBlocks(comment);
+        const commentBlocks = convertMarkdownToClickUpBlocks(markdown, toAttachmentMap(results));
 
         const requestBody = {
           comment: commentBlocks,
@@ -77,9 +165,11 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
                 `Comment added successfully!`,
                 `comment_id: ${commentData.id || 'N/A'}`,
                 `task_id: ${task_id}`,
-                `comment: ${comment}`,
+                `comment: ${summarizeMarkdownForEcho(comment)}`,
                 `date: ${timestampToIso(commentData.date || Date.now())}`,
                 `user: ${commentData.user?.username || 'Current user'}`,
+                ...formatAttachedImages(results),
+                ...formatImageFailures(failures),
               ].join('\n')
             }
           ],
@@ -108,6 +198,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
         "Use getListInfo first to see valid status options.",
         "SAFETY FEATURE: Description updates are APPEND-ONLY to prevent data loss - existing content is preserved.",
         "STATUS UPDATES: Use the `addComment` tool for progress reports, work logs, and status updates rather than the task description.",
+        IMAGE_SUPPORT_HINT,
         "Task descriptions should contain requirements, specifications, and core task information.",
         "LINKING IN DESCRIPTIONS: When appending descriptions, include links to related tasks, lists, or external resources.",
         "IMPORTANT: When updating tasks (especially when booking time or adding progress), ensure the status makes sense for the work being done - tasks in 'backlog' or 'closed' states usually shouldn't have active work.",
@@ -220,11 +311,23 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
 
         // Handle append-only description update with markdown support
         let finalDescription: string | undefined;
+        let imageResults: ImageUploadResult[] = [];
+        let imageFailures: string[] = [];
         if (append_description) {
+          // Upload first, then swap the local paths for CDN URLs. Descriptions render
+          // plain markdown, so no image fragments are involved here.
+          const prepared = await prepareMarkdownImages(task_id, append_description);
+          imageResults = prepared.results;
+          imageFailures = prepared.failures;
+          const appended = rewriteMarkdownImageUrls(
+            prepared.markdown,
+            toAttachmentMap(imageResults)
+          );
+
           const currentDescription = taskData.markdown_description || "";
           const timestamp = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
           const separator = currentDescription.trim() ? "\n\n---\n" : "";
-          finalDescription = currentDescription + separator + `**Edit (${timestamp}):** ${append_description}`;
+          finalDescription = currentDescription + separator + `**Edit (${timestamp}):** ${appended}`;
         }
 
         // Build update body without tags (they're handled separately)
@@ -298,6 +401,9 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
           responseLines.push('tag_warnings: ' + tagUpdateResults.join('; '));
         }
 
+        responseLines.push(...formatAttachedImages(imageResults));
+        responseLines.push(...formatImageFailures(imageFailures));
+
         return {
           content: [
             {
@@ -333,6 +439,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
         "- The response will include the new task's clickable URL - always share this link",
         "Use getListInfo first to understand the list context and available statuses.",
         "Task descriptions support full markdown formatting including **bold**, *italic*, lists, links, and code blocks.",
+        IMAGE_SUPPORT_HINT,
         "BEST PRACTICE: Every task creation should result in sharing the clickable task URL for future reference."
       ];
 
@@ -392,9 +499,41 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
 
         const createdTask = await response.json();
 
+        // Images can only be attached once the task exists, so the description is
+        // written first with its original sources and then rewritten to the CDN URLs.
+        const {
+          results: imageResults,
+          failures: imageFailures,
+          markdown: normalizedDescription,
+        } = await prepareMarkdownImages(createdTask.id, description);
+        const attachmentMap = toAttachmentMap(imageResults);
+        if (description && attachmentMap.size > 0) {
+          const rewritten = rewriteMarkdownImageUrls(normalizedDescription, attachmentMap);
+          if (rewritten !== description) {
+            const descriptionResponse = await fetch(`https://api.clickup.com/api/v2/task/${createdTask.id}`, {
+              method: 'PUT',
+              headers: {
+                Authorization: CONFIG.apiKey,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({ markdown_description: rewritten })
+            });
+            if (!descriptionResponse.ok) {
+              // The task itself exists - report the problem instead of failing the call.
+              console.error(`Failed to write image URLs into description: ${descriptionResponse.status}`);
+              imageFailures.push(
+                `description update failed (${descriptionResponse.status} ${descriptionResponse.statusText}) - images are attached but not embedded`
+              );
+            }
+          }
+        }
+
         const responseLines = formatTaskResponse(createdTask, 'created', {
           list_id, name, description, status, priority, due_date, start_date, time_estimate, tags, parent_task_id, assignees
         }, userData);
+
+        responseLines.push(...formatAttachedImages(imageResults));
+        responseLines.push(...formatImageFailures(imageFailures));
 
         return {
           content: [

@@ -5,9 +5,13 @@
 - Use "npm run build" to compile the typescript for validation.
 - Use "npm run cli" to test mcp calls.
 - CLI syntax: npm run cli <tool> key=value key2="\"quoted string\"" arrayKey='["item1","item2"]' objectKey='{"field":"value"}'
+- For multi-line values (markdown descriptions/comments) call "npx ts-node src/cli.ts" directly - "npm run cli" re-splits arguments through a second shell and loses them.
 - Use "npm run test" to run tests.
+- Use "npm run smoke" after a build to check the MCP protocol layer (initialize, tools/list, schemas) - "npm run cli" calls tool callbacks directly and never exercises stdio transport or tool registration. Add "-- <task_id> <image.png>" to also post a real comment with an image.
+- Tests need src/tests/setup.ts preloaded (see the test script): it points global fetch at the npm undici so MockAgent can intercept. Node's built-in fetch uses Node's own bundled undici, which MockAgent cannot reach.
 - Use console.error to prevent writing log messages to stdout.
 - MCPB manifest.json spec is at https://github.com/anthropics/mcpb/blob/main/README.md - update tools section when adding new MCP tools.
 - Update the CHANGELOG.md when changing or implementing a new feature.
 - Backwards compatibility does not matter, an LLM will understand new parameters.
 - Mention ID's, not just names, when outputting references. for example "User: Username (user_id: 12345)"
+- Image writing lives in src/shared/attachments.ts: markdown image sources are uploaded to the task, then comments get a `type: "image"` fragment carrying the *whole* attachment object (a bare URL string renders as an empty tile), while descriptions only need the markdown URL swapped. Attachments always belong to a task - doc pages cannot have them.

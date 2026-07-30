@@ -63,6 +63,10 @@ export const CONFIG = {
   teamId: process.env.CLICKUP_TEAM_ID!,
   maxImages: process.env.MAX_IMAGES ? parseInt(process.env.MAX_IMAGES) : 4,
   maxResponseSizeMB: process.env.MAX_RESPONSE_SIZE_MB ? parseFloat(process.env.MAX_RESPONSE_SIZE_MB) : 1,
+  // Upper bound for a single image uploaded to ClickUp. Unlike maxResponseSizeMB this is
+  // not about context window budget - it only guards against accidentally pushing huge
+  // files into a ticket.
+  maxUploadSizeMB: process.env.MAX_UPLOAD_SIZE_MB ? parseFloat(process.env.MAX_UPLOAD_SIZE_MB) : 10,
   primaryLanguageHint: detectedLanguageHint, // Store the cleaned code directly
   mode: mcpMode,
 };

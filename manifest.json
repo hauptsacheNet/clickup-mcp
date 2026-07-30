@@ -3,7 +3,7 @@
   "name": "@hauptsache.net/clickup-mcp",
   "display_name": "ClickUp",
   "icon": "icon-72x72.png",
-  "version": "1.6.1",
+  "version": "1.7.0",
   "description": "Search, create, and retrieve tasks and documents, add comments, and track time through natural language commands.",
   "author": {
     "name": "Marco Pfeiffer",
@@ -34,15 +34,15 @@
     },
     {
       "name": "addComment",
-      "description": "Add a comment to a specific task with linking best practices and progress updates."
+      "description": "Add a comment to a specific task with linking best practices and progress updates. Images written as markdown (local file paths, data URIs or URLs) are uploaded and embedded automatically."
     },
     {
       "name": "updateTask",
-      "description": "Update various aspects of an existing task including name, description (append-only), status, priority, dates, tags, assignees, and parent relationships."
+      "description": "Update various aspects of an existing task including name, description (append-only), status, priority, dates, tags, assignees, and parent relationships. Images in the appended description are uploaded and embedded automatically."
     },
     {
       "name": "createTask",
-      "description": "Create a new task in a specific list with full markdown support, assignment to users, and automatic linking to related tasks."
+      "description": "Create a new task in a specific list with full markdown support, assignment to users, and automatic linking to related tasks. Images in the description are uploaded and embedded automatically."
     },
     {
       "name": "searchTasks",

@@ -11,7 +11,7 @@ Model Context Protocol (MCP) server enabling AI assistants to interact with Clic
 | **Setup**            | Local npm/npx install                                 | Remote MCP (no install)                     |
 | **Authentication**   | API key only                                          | OAuth only                                  |
 | **Task Context**     | Complete with comments, status history, inline images | Requires mutiple tool calls for full contxt |
-| **Image Support**    | Inline images with smart size budgeting               | Not documented                              |
+| **Image Support**    | Read and write: inline images with smart size budgeting, and `![](local/path.png)` uploads automatically | Upload via separate tool calls; base64 capped at ~200KB |
 | **Search**           | Fuzzy search on recent tasks (limited scope)          | Full ClickUp search database                |
 | **Documents**        | CRUD operations                                       | CRUD + document search                      |
 | **Time Tracking**    | View and create entries                               | Timers and entries                          |
@@ -22,6 +22,7 @@ Model Context Protocol (MCP) server enabling AI assistants to interact with Clic
 
 **Choose this MCP when:**
 - You need rich task context with inline images for AI coding tools
+- You want to write screenshots into tickets by local file path (running locally, it reads the file itself instead of taking base64)
 - You need API key authentication for automation or CI/CD pipelines
 - You want the `read-minimal` mode optimized for development workflows
 
@@ -229,6 +230,7 @@ This MCP server can be configured using environment variables:
 - `CLICKUP_MCP_MODE`: (Optional) Controls which tools are available. Options: `read-minimal`, `read`, `write` (default).
 - `MAX_IMAGES`: (Optional) The maximum number of images to return for a task in `getTaskById`. Defaults to 4.
 - `MAX_RESPONSE_SIZE_MB`: (Optional) The maximum response size in megabytes for `getTaskById`. Uses intelligent size budgeting to fit the most important images within the limit. Defaults to 1.
+- `MAX_UPLOAD_SIZE_MB`: (Optional) The maximum size of a single image uploaded when writing comments or descriptions. Defaults to 10.
 - `CLICKUP_PRIMARY_LANGUAGE`: (Optional) A hint for the primary language used in your ClickUp tasks (e.g., "de" for German, "en" for English). This helps the `searchTask` tool provide more tailored guidance in its description for multilingual searches.
 - `LANG`: (Optional) If `CLICKUP_PRIMARY_LANGUAGE` is not set, the MCP will check this standard environment variable (e.g., "en_US.UTF-8", "de_DE") as a fallback to infer the primary language.
 
@@ -283,6 +285,35 @@ When updating task descriptions, content is safely appended:
 ```
 
 This ensures no existing content is ever lost while maintaining a clear audit trail.
+
+## Writing Images Into Tickets
+
+`addComment`, `createTask` and `updateTask` accept images as ordinary markdown. Because
+this server runs locally, it reads the file itself - so a **local path is enough**:
+
+```markdown
+Ist umgesetzt. So sieht es aus:
+
+**1. Login öffnen** – der Kunde gibt nur seine E-Mail-Adresse ein.
+
+![Die Login-Maske fragt nur nach der E-Mail](/Users/me/shots/login.png)
+```
+
+Accepted sources: local file paths, `data:` URIs, http(s) URLs (downloaded, then
+re-uploaded), and existing ClickUp attachment URLs (embedded without re-uploading).
+
+Notes:
+
+- **Prefer paths over base64.** A path costs a few tokens; the same screenshot as a
+  `data:` URI costs roughly 4/3 of its file size in the request.
+- **The caption becomes the attachment filename**, and that filename is what ClickUp
+  displays beneath the image - so write a caption that reads well.
+- **An image inside a numbered list breaks ClickUp's numbering.** Write walkthrough
+  steps as bold lines with the image between them, as above.
+- Only real PNG/JPEG/GIF/WebP files are uploaded - the content is checked, not the
+  extension. A file that fails is reported in the response, and the comment or task is
+  still written.
+- Attachments always belong to a task, so document pages cannot embed uploads this way.
 
 ## Performance & Limitations
 
