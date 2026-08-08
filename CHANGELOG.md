@@ -35,6 +35,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed the CLI discarding any multi-line parameter value (the `key=value` pattern did not match across newlines), which made markdown impossible to test via `npm run cli`
 - Fixed the test suite never reaching its mocks: `undici`'s `MockAgent` cannot intercept Node's built-in global `fetch`, so every test made real network calls and failed on DNS. 17 of 31 tests were failing before this fix
 
+### Security
+- Updated `@modelcontextprotocol/sdk` from 1.15.1 to 1.27.1 (fixes CVE-2025-66414, CVE-2026-0621, CVE-2026-25536)
+- Updated `undici` from ^7.16.0 to ^7.24.4
+- Fixed transitive vulnerabilities in `minimatch`, `qs`, `ajv`, and `diff` via `npm audit fix`
+
 ## [1.6.0] - 2025-11-25
 
 ### Added
