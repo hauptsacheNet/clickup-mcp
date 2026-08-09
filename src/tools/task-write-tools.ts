@@ -754,19 +754,31 @@ interface ExistingComment {
   reply_count?: number;
 }
 
+/** Cursor into the comment list: the date and id of the last comment of the previous page */
+interface CommentPageCursor {
+  start: string;
+  startId: string;
+}
+
 /**
- * Load a single comment of a task.
- *
- * ClickUp has no `GET /comment/{id}`, so the task's comment list is the only way
- * to learn a comment's author and age - both of which editComment has to check
- * before touching anything.
- *
- * Note the list only contains top-level comments; replies inside a thread live
- * behind `/comment/{parent_id}/reply` and are therefore not editable here.
+ * Never page further back than this. A generous edit window would otherwise walk
+ * the entire comment history of a busy ticket and eat the 100 calls/minute budget.
  */
-async function findTaskComment(taskId: string, commentId: string): Promise<ExistingComment> {
+const MAX_COMMENT_PAGES = 10;
+
+/** One page of task comments, newest first, 25 per page */
+async function fetchCommentPage(
+  taskId: string,
+  cursor?: CommentPageCursor
+): Promise<ExistingComment[]> {
+  // Note there is no `start_date` parameter - passing one is silently ignored.
+  // Older pages are reached with `start` + `start_id` of the previous page's last entry.
+  const query = cursor
+    ? `?${new URLSearchParams({ start: cursor.start, start_id: cursor.startId })}`
+    : "";
+
   const response = await fetch(
-    `https://api.clickup.com/api/v2/task/${taskId}/comment?start_date=0`,
+    `https://api.clickup.com/api/v2/task/${taskId}/comment${query}`,
     { headers: { Authorization: CONFIG.apiKey } }
   );
 
@@ -778,19 +790,62 @@ async function findTaskComment(taskId: string, commentId: string): Promise<Exist
   }
 
   const data = await response.json();
-  const comments: ExistingComment[] = Array.isArray(data.comments) ? data.comments : [];
-  const match = comments.find((entry) => String(entry.id) === String(commentId));
+  return Array.isArray(data.comments) ? data.comments : [];
+}
 
-  if (!match) {
-    const threadedHint = comments.some((entry) => (entry.reply_count ?? 0) > 0)
-      ? " This task has threaded replies, and replies inside a thread cannot be edited - answer them with a new comment instead."
-      : "";
-    throw new Error(
-      `Comment ${commentId} was not found on task ${taskId} (${comments.length} top-level comment(s) checked).${threadedHint}`
-    );
+/**
+ * Load a single comment of a task.
+ *
+ * ClickUp has no `GET /comment/{id}`, so the task's comment list is the only way
+ * to learn a comment's author and age - both of which editComment has to check
+ * before touching anything.
+ *
+ * The list returns the 25 newest comments per page, so a busy ticket needs paging
+ * to reach the wanted comment. Paging stops as soon as a page ends outside the edit
+ * window: everything older would be refused anyway, which keeps this to a single
+ * request in the normal case.
+ *
+ * Note the list only contains top-level comments; replies inside a thread live
+ * behind `/comment/{parent_id}/reply` and are therefore not editable here.
+ */
+async function findTaskComment(taskId: string, commentId: string): Promise<ExistingComment> {
+  const oldestEditableDate = Date.now() - CONFIG.commentEditWindowHours * 60 * 60 * 1000;
+
+  let cursor: CommentPageCursor | undefined;
+  let checked = 0;
+  let pages = 0;
+  let sawThreadedReplies = false;
+
+  while (pages < MAX_COMMENT_PAGES) {
+    const page = await fetchCommentPage(taskId, cursor);
+    pages++;
+    if (page.length === 0) {
+      break;
+    }
+
+    const match = page.find((entry) => String(entry.id) === String(commentId));
+    if (match) {
+      return match;
+    }
+
+    checked += page.length;
+    sawThreadedReplies ||= page.some((entry) => (entry.reply_count ?? 0) > 0);
+
+    // Comments come back newest first, so once a page runs past the edit window
+    // there is nothing editable further back.
+    const oldest = page[page.length - 1];
+    if (Number(oldest.date) < oldestEditableDate) {
+      break;
+    }
+    cursor = { start: String(oldest.date), startId: String(oldest.id) };
   }
 
-  return match;
+  const threadedHint = sawThreadedReplies
+    ? " This task has threaded replies, and replies inside a thread cannot be edited - answer them with a new comment instead."
+    : "";
+  throw new Error(
+    `Comment ${commentId} was not found on task ${taskId} (${checked} top-level comment(s) checked across ${pages} page(s), newest first).${threadedHint}`
+  );
 }
 
 /**

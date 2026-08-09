@@ -313,8 +313,11 @@ Notes:
 - **An image inside a numbered list breaks ClickUp's numbering.** Write walkthrough
   steps as bold lines with the image between them, as above.
 - Only real PNG/JPEG/GIF/WebP files are uploaded - the content is checked, not the
-  extension. A file that fails is reported in the response, and the comment or task is
-  still written.
+  extension. A file that fails **aborts the write**: `addComment`, `editComment` and
+  `updateTask` report every broken reference and change nothing, so the markdown can be
+  fixed and the call retried without creating duplicates. `createTask` validates its
+  images before creating the task; only an upload failing afterwards is reported as a
+  warning, since the task already exists at that point.
 - Attachments always belong to a task, so document pages cannot embed uploads this way.
 
 ## Performance & Limitations

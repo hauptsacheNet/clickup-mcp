@@ -12,11 +12,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Two guardrails, since ClickUp cannot distinguish a comment written through this MCP from one written by the same user in the web UI:
   - only comments belonging to the API token's own user can be edited, so other people's comments are safe
   - only comments created within `CLICKUP_COMMENT_EDIT_WINDOW_HOURS` (default 24) can be edited. Editing does not change the creation date, so the window cannot be extended by repeated edits.
-- New `CLICKUP_COMMENT_EDIT_WINDOW_HOURS` environment variable (default 24, `0` disables `editComment`).
+- New `CLICKUP_COMMENT_EDIT_WINDOW_HOURS` environment variable (default 24, `0` disables `editComment`). An unparsable value fails at startup instead of silently widening or disabling the window.
+
+### Fixed
+- Documented that a broken image reference aborts the write - the README still described the pre-1.7.1 behaviour of writing the comment or task anyway.
 
 ### Notes
 - ClickUp shows no "edited" marker on a changed comment and exposes none via the API, so readers who already saw the original will not notice the change. The tool description tells the model to prefer a follow-up comment once a discussion has started.
 - Replies inside a comment thread live behind a different endpoint and cannot be edited; `editComment` reports this instead of failing silently.
+- `GET /task/{id}/comment` returns only the 25 newest comments per page (`start_date` is not a real parameter and is ignored). `editComment` pages back with `start`/`start_id` and stops as soon as a page ends outside the edit window, so a busy ticket still costs a single request in the normal case.
 
 ## [1.7.1] - 2026-07-31
 

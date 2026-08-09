@@ -21,16 +21,34 @@ function makeServerStub(tools: Record<string, any>) {
   } as any;
 }
 
-/** Mock agent with the two GETs every editComment call makes up front */
-function setupClient(comments: any[]) {
+/**
+ * Mock agent with the two GETs every editComment call makes up front.
+ * Each entry of `pages` is one page of the comment list, newest first.
+ */
+function setupClient(...pages: any[][]) {
   const mockAgent = new MockAgent();
   mockAgent.disableNetConnect();
   setGlobalDispatcher(mockAgent);
   const client = mockAgent.get("https://api.clickup.com");
 
-  client
-    .intercept({ path: "/api/v2/task/task123/comment?start_date=0", method: "GET" })
-    .reply(200, { comments });
+  pages.forEach((comments, index) => {
+    if (index === 0) {
+      client
+        .intercept({ path: "/api/v2/task/task123/comment", method: "GET" })
+        .reply(200, { comments });
+      return;
+    }
+    // Older pages are requested with the last comment of the previous page
+    const previous = pages[index - 1];
+    const last = previous[previous.length - 1];
+    client
+      .intercept({
+        path: `/api/v2/task/task123/comment?start=${last.date}&start_id=${last.id}`,
+        method: "GET",
+      })
+      .reply(200, { comments });
+  });
+
   client
     .intercept({ path: "/api/v2/user", method: "GET" })
     .reply(200, { user: { id: 42, username: "me" } });
@@ -84,6 +102,75 @@ test("editComment PUTs formatted blocks for a recent own comment", async (t) => 
   const text = result.content[0].text;
   assert.ok(text.includes("Comment edited successfully"), text);
   assert.ok(text.includes("previous_text: Original text"), text);
+
+  await mockAgent.close();
+  t.mock.timers.runAll();
+  t.mock.timers.reset();
+});
+
+test("editComment pages past the newest 25 comments to find the target", async (t) => {
+  enableTimers(t);
+  process.env.CLICKUP_API_KEY = "test-key";
+  process.env.CLICKUP_TEAM_ID = "team1";
+
+  const { registerTaskToolsWrite } = await import("../tools/task-write-tools");
+
+  // A full first page of newer comments, with the target only on page two
+  const firstPage = Array.from({ length: 25 }, (_, i) =>
+    ownComment({ id: `newer${i}`, date: String(Date.now() - i * 60 * 1000) })
+  );
+  const { mockAgent, client } = setupClient(firstPage, [ownComment()]);
+
+  let putCalled = false;
+  client
+    .intercept({ path: "/api/v2/comment/c1", method: "PUT" })
+    .reply(() => {
+      putCalled = true;
+      return { statusCode: 200, data: {} };
+    });
+
+  const tools: Record<string, any> = {};
+  registerTaskToolsWrite(makeServerStub(tools), { user: { username: "me", id: 42 } });
+
+  const result = await tools.editComment({
+    task_id: "task123",
+    comment_id: "c1",
+    comment: "Found on page two",
+  });
+
+  assert.ok(putCalled, "the comment on page two must actually be edited");
+  assert.ok(result.content[0].text.includes("Comment edited successfully"), result.content[0].text);
+
+  await mockAgent.close();
+  t.mock.timers.runAll();
+  t.mock.timers.reset();
+});
+
+test("editComment stops paging once a page ends outside the edit window", async (t) => {
+  enableTimers(t);
+  process.env.CLICKUP_API_KEY = "test-key";
+  process.env.CLICKUP_TEAM_ID = "team1";
+
+  const { registerTaskToolsWrite } = await import("../tools/task-write-tools");
+
+  // The page ends 30h back, so nothing editable can follow - a request for a
+  // second page is not intercepted and would fail the test.
+  const { mockAgent } = setupClient([
+    ownComment({ id: "newer", date: String(Date.now() - HOUR) }),
+    ownComment({ id: "older", date: String(Date.now() - 30 * HOUR) }),
+  ]);
+
+  const tools: Record<string, any> = {};
+  registerTaskToolsWrite(makeServerStub(tools), { user: { username: "me", id: 42 } });
+
+  const result = await tools.editComment({
+    task_id: "task123",
+    comment_id: "c1",
+    comment: "Not reachable",
+  });
+
+  const text = result.content[0].text;
+  assert.ok(/2 top-level comment\(s\) checked across 1 page\(s\)/.test(text), text);
 
   await mockAgent.close();
   t.mock.timers.runAll();
@@ -151,7 +238,8 @@ test("editComment reports an unknown comment id and hints at threaded replies", 
   process.env.CLICKUP_TEAM_ID = "team1";
 
   const { registerTaskToolsWrite } = await import("../tools/task-write-tools");
-  const { mockAgent } = setupClient([ownComment({ id: "other", reply_count: 3 })]);
+  // Second page comes back empty, which ends the search
+  const { mockAgent } = setupClient([ownComment({ id: "other", reply_count: 3 })], []);
 
   const tools: Record<string, any> = {};
   registerTaskToolsWrite(makeServerStub(tools), { user: { username: "me", id: 42 } });

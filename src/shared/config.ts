@@ -58,6 +58,24 @@ if (rawMode === 'read-minimal' || rawMode === 'read') {
   console.error(`Invalid CLICKUP_MCP_MODE "${rawMode}". Using default "write". Valid options: read-minimal, read, write`);
 }
 
+/**
+ * The edit window is a safety limit, so a typo must not silently widen it:
+ * `parseFloat("Infinity")` would disable the age check altogether, and
+ * `parseFloat("abc")` would quietly turn editing off.
+ */
+function parseCommentEditWindowHours(raw: string | undefined): number {
+  if (!raw?.trim()) {
+    return 24;
+  }
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error(
+      `Invalid CLICKUP_COMMENT_EDIT_WINDOW_HOURS "${raw}". Expected a non-negative number of hours (0 disables editComment).`
+    );
+  }
+  return value;
+}
+
 export const CONFIG = {
   apiKey: process.env.CLICKUP_API_KEY!,
   teamId: process.env.CLICKUP_TEAM_ID!,
@@ -70,9 +88,7 @@ export const CONFIG = {
   // How long after creation a comment may still be edited. ClickUp has no way to tell
   // "written by this MCP" apart from "written by the token owner in the UI", so this
   // window is the actual guard against rewriting history. 0 disables editing entirely.
-  commentEditWindowHours: process.env.CLICKUP_COMMENT_EDIT_WINDOW_HOURS
-    ? parseFloat(process.env.CLICKUP_COMMENT_EDIT_WINDOW_HOURS)
-    : 24,
+  commentEditWindowHours: parseCommentEditWindowHours(process.env.CLICKUP_COMMENT_EDIT_WINDOW_HOURS),
   primaryLanguageHint: detectedLanguageHint, // Store the cleaned code directly
   mode: mcpMode,
 };
