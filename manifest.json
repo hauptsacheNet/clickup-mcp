@@ -37,6 +37,10 @@
       "description": "Add a comment to a specific task with linking best practices and progress updates. Images written as markdown (local file paths, data URIs or URLs) are uploaded and embedded automatically."
     },
     {
+      "name": "editComment",
+      "description": "Replace the text of an own task comment within a configurable time window (default 24 hours) instead of posting a follow-up comment. Formatting and images are preserved; comments by other users and older comments are refused."
+    },
+    {
       "name": "updateTask",
       "description": "Update various aspects of an existing task including name, description (append-only), status, priority, dates, tags, assignees, and parent relationships. Images in the appended description are uploaded and embedded automatically."
     },

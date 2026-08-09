@@ -67,6 +67,12 @@ export const CONFIG = {
   // not about context window budget - it only guards against accidentally pushing huge
   // files into a ticket.
   maxUploadSizeMB: process.env.MAX_UPLOAD_SIZE_MB ? parseFloat(process.env.MAX_UPLOAD_SIZE_MB) : 10,
+  // How long after creation a comment may still be edited. ClickUp has no way to tell
+  // "written by this MCP" apart from "written by the token owner in the UI", so this
+  // window is the actual guard against rewriting history. 0 disables editing entirely.
+  commentEditWindowHours: process.env.CLICKUP_COMMENT_EDIT_WINDOW_HOURS
+    ? parseFloat(process.env.CLICKUP_COMMENT_EDIT_WINDOW_HOURS)
+    : 24,
   primaryLanguageHint: detectedLanguageHint, // Store the cleaned code directly
   mode: mcpMode,
 };

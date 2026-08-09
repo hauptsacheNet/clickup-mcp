@@ -14,4 +14,5 @@
 - Update the CHANGELOG.md when changing or implementing a new feature.
 - Backwards compatibility does not matter, an LLM will understand new parameters.
 - Mention ID's, not just names, when outputting references. for example "User: Username (user_id: 12345)"
+- `PUT /api/v2/comment/{id}` accepts the same undocumented rich `comment` fragment array as comment creation (the API reference only lists `comment_text`, and `assignee`/`resolved` are not actually required). Sending `comment` and `comment_text` together appends the latter. There is no `GET /comment/{id}`, so editComment reads the task's comment list to check author and age.
 - Image writing lives in src/shared/attachments.ts: markdown image sources are uploaded to the task, then comments get a `type: "image"` fragment carrying the *whole* attachment object (a bare URL string renders as an empty tile), while descriptions only need the markdown URL swapped. Attachments always belong to a task - doc pages cannot have them.
