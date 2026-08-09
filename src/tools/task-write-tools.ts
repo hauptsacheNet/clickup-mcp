@@ -240,7 +240,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
         "ClickUp shows no 'edited' marker, so people who already read the comment will not notice the change - for anything that changes meaning after a discussion has started, prefer a follow-up comment.",
         "Editing does not reset the creation date, so the edit window does not get extended by editing.",
         IMAGE_SUPPORT_HINT,
-        "IMAGES ON EDIT: images from the old version are NOT carried over automatically. Keep them by repeating their existing ClickUp attachment URL in the markdown - those are re-embedded without uploading again.",
+        "IMAGES ON EDIT: reading a comment (getTaskById) returns its images as markdown, so passing that text back keeps them - an existing ClickUp attachment URL is re-embedded without uploading again. Only an image whose markdown you drop disappears.",
       ];
 
       if (CONFIG.primaryLanguageHint && CONFIG.primaryLanguageHint.toLowerCase() !== 'en') {

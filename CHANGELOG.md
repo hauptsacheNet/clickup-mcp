@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - only comments created within `CLICKUP_COMMENT_EDIT_WINDOW_HOURS` (default 24) can be edited. Editing does not change the creation date, so the window cannot be extended by repeated edits.
 - New `CLICKUP_COMMENT_EDIT_WINDOW_HOURS` environment variable (default 24, `0` disables `editComment`). An unparsable value fails at startup instead of silently widening or disabling the window.
 
+### Changed
+- **Images are now read back as markdown.** `getTaskById` used to render an image inside a comment or description as `Image: name - url`, which is not something the write tools understand. It is now `![name](url)`, the same syntax `addComment`/`editComment`/`createTask`/`updateTask` accept. This closes the read-edit round trip: a comment read from a task can be handed back to `editComment` unchanged and keeps its images, because an existing ClickUp attachment URL is re-embedded instead of re-uploaded.
+
 ### Fixed
 - Documented that a broken image reference aborts the write - the README still described the pre-1.7.1 behaviour of writing the comment or task anyway.
 
