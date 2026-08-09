@@ -188,6 +188,7 @@ The ClickUp MCP supports three operational modes to balance functionality, secur
 |------------------------|:------------:|:----:|:-----:|-----------------------------------------------------------------------------------------|
 | `getTaskById`          |      ✅       |  ✅   |   ✅   | Get complete task details including comments, images, and metadata                      |
 | `addComment`           |      ❌       |  ❌   |   ✅   | Add comments to tasks for collaboration                                                 |
+| `editComment`          |      ❌       |  ❌   |   ✅   | Correct your own comment within 24h instead of posting a follow-up                      |
 | `updateTask`           |      ❌       |  ❌   |   ✅   | Update tasks (status, priority, assignees, etc.) with **SAFE APPEND-ONLY** descriptions |
 | `createTask`           |      ❌       |  ❌   |   ✅   | Create new tasks with full markdown support                                             |
 | `searchTasks`          |      ✅       |  ✅   |   ✅   | Find tasks by content, keywords, assignees, or project context                          |
@@ -231,6 +232,7 @@ This MCP server can be configured using environment variables:
 - `MAX_IMAGES`: (Optional) The maximum number of images to return for a task in `getTaskById`. Defaults to 4.
 - `MAX_RESPONSE_SIZE_MB`: (Optional) The maximum response size in megabytes for `getTaskById`. Uses intelligent size budgeting to fit the most important images within the limit. Defaults to 1.
 - `MAX_UPLOAD_SIZE_MB`: (Optional) The maximum size of a single image uploaded when writing comments or descriptions. Defaults to 10.
+- `CLICKUP_COMMENT_EDIT_WINDOW_HOURS`: (Optional) How long after creation `editComment` may still rewrite a comment. Defaults to 24. Set to `0` to disable comment editing entirely.
 - `CLICKUP_PRIMARY_LANGUAGE`: (Optional) A hint for the primary language used in your ClickUp tasks (e.g., "de" for German, "en" for English). This helps the `searchTask` tool provide more tailored guidance in its description for multilingual searches.
 - `LANG`: (Optional) If `CLICKUP_PRIMARY_LANGUAGE` is not set, the MCP will check this standard environment variable (e.g., "en_US.UTF-8", "de_DE") as a fallback to infer the primary language.
 
@@ -288,7 +290,7 @@ This ensures no existing content is ever lost while maintaining a clear audit tr
 
 ## Writing Images Into Tickets
 
-`addComment`, `createTask` and `updateTask` accept images as ordinary markdown. Because
+`addComment`, `editComment`, `createTask` and `updateTask` accept images as ordinary markdown. Because
 this server runs locally, it reads the file itself - so a **local path is enough**:
 
 ```markdown
@@ -311,8 +313,11 @@ Notes:
 - **An image inside a numbered list breaks ClickUp's numbering.** Write walkthrough
   steps as bold lines with the image between them, as above.
 - Only real PNG/JPEG/GIF/WebP files are uploaded - the content is checked, not the
-  extension. A file that fails is reported in the response, and the comment or task is
-  still written.
+  extension. A file that fails **aborts the write**: `addComment`, `editComment` and
+  `updateTask` report every broken reference and change nothing, so the markdown can be
+  fixed and the call retried without creating duplicates. `createTask` validates its
+  images before creating the task; only an upload failing afterwards is reported as a
+  warning, since the task already exists at that point.
 - Attachments always belong to a task, so document pages cannot embed uploads this way.
 
 ## Performance & Limitations

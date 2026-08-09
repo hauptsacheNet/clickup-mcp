@@ -99,7 +99,7 @@ async function main() {
   check("all tools have an object inputSchema", malformed.length === 0,
     malformed.map((t: any) => t.name).join(", "));
 
-  const writeTools = ["addComment", "createTask", "updateTask"];
+  const writeTools = ["addComment", "editComment", "createTask", "updateTask"];
   for (const name of writeTools) {
     const tool = tools.find((t: any) => t.name === name);
     check(`${name} documents image support`,

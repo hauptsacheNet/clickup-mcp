@@ -231,6 +231,103 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
   );
 
   server.tool(
+    "editComment",
+    (() => {
+      const descriptionBase = [
+        "Replaces the full text of an existing task comment - use this to correct a comment you just posted instead of adding a follow-up comment.",
+        "The new text REPLACES the old one completely, it is not appended. Anything worth keeping must be repeated in `comment`.",
+        `GUARDRAILS: only comments written by the API token's own user can be edited, and only within ${CONFIG.commentEditWindowHours} hours of their creation. Older comments and other people's comments must be answered with a new comment via addComment.`,
+        "ClickUp shows no 'edited' marker, so people who already read the comment will not notice the change - for anything that changes meaning after a discussion has started, prefer a follow-up comment.",
+        "Editing does not reset the creation date, so the edit window does not get extended by editing.",
+        IMAGE_SUPPORT_HINT,
+        "IMAGES ON EDIT: reading a comment (getTaskById) returns its images as markdown, so passing that text back keeps them - an existing ClickUp attachment URL is re-embedded without uploading again. Only an image whose markdown you drop disappears.",
+      ];
+
+      if (CONFIG.primaryLanguageHint && CONFIG.primaryLanguageHint.toLowerCase() !== 'en') {
+        descriptionBase.splice(1, 0,
+          `For optimal results, consider writing comments in '${CONFIG.primaryLanguageHint}' unless the task is already in another language.`);
+      }
+
+      return descriptionBase.join("\n");
+    })(),
+    {
+      task_id: z.string().min(6).max(9).describe("The 6-9 character ID of the task the comment belongs to - needed to locate the comment and to upload images"),
+      comment_id: z.string().min(1).describe("The ID of the comment to edit, as returned by addComment or getTaskById"),
+      comment: z.string().min(1).describe("The new comment text, replacing the previous text completely"),
+    },
+    {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+    },
+    async ({ task_id, comment_id, comment }) => {
+      try {
+        const [existing, userData] = await Promise.all([
+          findTaskComment(task_id, comment_id),
+          getCurrentUser(),
+        ]);
+
+        assertCommentIsEditable(existing, userData.user.id);
+
+        // Same pipeline as addComment - the undocumented rich `comment` array is
+        // accepted by PUT too, so formatting and images survive an edit. Images are
+        // resolved and uploaded before the PUT, so a broken reference leaves the
+        // existing comment untouched.
+        const abortNotice = "the comment was NOT changed";
+        const { markdown, images } = await resolveImagesOrAbort(comment, abortNotice);
+        const uploaded = await uploadImagesOrAbort(task_id, images, abortNotice);
+
+        const commentBlocks = convertMarkdownToClickUpBlocks(markdown, toAttachmentMap(uploaded));
+
+        // Only `comment` is sent: sending `comment_text` alongside it appends that
+        // string to the blocks instead of being ignored.
+        const response = await fetch(`https://api.clickup.com/api/v2/comment/${comment_id}`, {
+          method: 'PUT',
+          headers: {
+            Authorization: CONFIG.apiKey,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ comment: commentBlocks })
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(`Error editing comment: ${response.status} ${response.statusText} - ${JSON.stringify(errorData)}`);
+        }
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: [
+                `Comment edited successfully!`,
+                `comment_id: ${comment_id}`,
+                `task_id: ${task_id}`,
+                `task_url: https://app.clickup.com/t/${task_id}`,
+                `created: ${timestampToIso(existing.date)} (unchanged by the edit)`,
+                `previous_text: ${existing.comment_text || '(no plain text available)'}`,
+                `new_comment: ${summarizeMarkdownForEcho(comment)}`,
+                ...formatAttachedImages(uploaded),
+              ].join('\n')
+            }
+          ],
+        };
+
+      } catch (error) {
+        console.error('Error editing comment:', error);
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Error editing comment: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            },
+          ],
+        };
+      }
+    }
+  );
+
+  server.tool(
     "updateTask",
     (() => {
       const descriptionBase = [
@@ -646,6 +743,139 @@ function formatTimeEstimate(hours: number): string {
   const displayHours = Math.floor(hours);
   const displayMinutes = Math.round((hours - displayHours) * 60);
   return displayHours > 0 ? `${displayHours}h ${displayMinutes}m` : `${displayMinutes}m`;
+}
+
+/** A task comment as returned by GET /api/v2/task/{task_id}/comment */
+interface ExistingComment {
+  id: string;
+  date: string;
+  comment_text?: string;
+  user?: { id?: number | string; username?: string };
+  reply_count?: number;
+}
+
+/** Cursor into the comment list: the date and id of the last comment of the previous page */
+interface CommentPageCursor {
+  start: string;
+  startId: string;
+}
+
+/**
+ * Never page further back than this. A generous edit window would otherwise walk
+ * the entire comment history of a busy ticket and eat the 100 calls/minute budget.
+ */
+const MAX_COMMENT_PAGES = 10;
+
+/** One page of task comments, newest first, 25 per page */
+async function fetchCommentPage(
+  taskId: string,
+  cursor?: CommentPageCursor
+): Promise<ExistingComment[]> {
+  // Note there is no `start_date` parameter - passing one is silently ignored.
+  // Older pages are reached with `start` + `start_id` of the previous page's last entry.
+  const query = cursor
+    ? `?${new URLSearchParams({ start: cursor.start, start_id: cursor.startId })}`
+    : "";
+
+  const response = await fetch(
+    `https://api.clickup.com/api/v2/task/${taskId}/comment${query}`,
+    { headers: { Authorization: CONFIG.apiKey } }
+  );
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(
+      `Error loading comments of task ${taskId}: ${response.status} ${response.statusText} - ${JSON.stringify(errorData)}`
+    );
+  }
+
+  const data = await response.json();
+  return Array.isArray(data.comments) ? data.comments : [];
+}
+
+/**
+ * Load a single comment of a task.
+ *
+ * ClickUp has no `GET /comment/{id}`, so the task's comment list is the only way
+ * to learn a comment's author and age - both of which editComment has to check
+ * before touching anything.
+ *
+ * The list returns the 25 newest comments per page, so a busy ticket needs paging
+ * to reach the wanted comment. Paging stops as soon as a page ends outside the edit
+ * window: everything older would be refused anyway, which keeps this to a single
+ * request in the normal case.
+ *
+ * Note the list only contains top-level comments; replies inside a thread live
+ * behind `/comment/{parent_id}/reply` and are therefore not editable here.
+ */
+async function findTaskComment(taskId: string, commentId: string): Promise<ExistingComment> {
+  const oldestEditableDate = Date.now() - CONFIG.commentEditWindowHours * 60 * 60 * 1000;
+
+  let cursor: CommentPageCursor | undefined;
+  let checked = 0;
+  let pages = 0;
+  let sawThreadedReplies = false;
+
+  while (pages < MAX_COMMENT_PAGES) {
+    const page = await fetchCommentPage(taskId, cursor);
+    pages++;
+    if (page.length === 0) {
+      break;
+    }
+
+    const match = page.find((entry) => String(entry.id) === String(commentId));
+    if (match) {
+      return match;
+    }
+
+    checked += page.length;
+    sawThreadedReplies ||= page.some((entry) => (entry.reply_count ?? 0) > 0);
+
+    // Comments come back newest first, so once a page runs past the edit window
+    // there is nothing editable further back.
+    const oldest = page[page.length - 1];
+    if (Number(oldest.date) < oldestEditableDate) {
+      break;
+    }
+    cursor = { start: String(oldest.date), startId: String(oldest.id) };
+  }
+
+  const threadedHint = sawThreadedReplies
+    ? " This task has threaded replies, and replies inside a thread cannot be edited - answer them with a new comment instead."
+    : "";
+  throw new Error(
+    `Comment ${commentId} was not found on task ${taskId} (${checked} top-level comment(s) checked across ${pages} page(s), newest first).${threadedHint}`
+  );
+}
+
+/**
+ * The whole safety model of editComment.
+ *
+ * ClickUp cannot tell "written through this MCP" from "written by the token owner
+ * in the web UI" - both carry the same user id - so the author check only keeps
+ * other people's comments safe, and the time window is what keeps the tool from
+ * rewriting history.
+ */
+function assertCommentIsEditable(comment: ExistingComment, currentUserId: number | string): void {
+  const windowHours = CONFIG.commentEditWindowHours;
+  if (!(windowHours > 0)) {
+    throw new Error(
+      `Editing comments is disabled (CLICKUP_COMMENT_EDIT_WINDOW_HOURS=${windowHours}). Add a new comment instead.`
+    );
+  }
+
+  if (String(comment.user?.id ?? '') !== String(currentUserId)) {
+    throw new Error(
+      `Comment ${comment.id} was written by ${comment.user?.username || 'someone else'} (user_id: ${comment.user?.id ?? 'unknown'}), not by the current user (user_id: ${currentUserId}). Only your own comments can be edited - reply with a new comment instead.`
+    );
+  }
+
+  const ageHours = (Date.now() - Number(comment.date)) / (1000 * 60 * 60);
+  if (ageHours > windowHours) {
+    throw new Error(
+      `Comment ${comment.id} was created ${ageHours.toFixed(1)} hours ago (${timestampToIso(comment.date)}), which is outside the ${windowHours} hour edit window. Add a new comment instead of rewriting an old one.`
+    );
+  }
 }
 
 /**

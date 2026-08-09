@@ -66,6 +66,19 @@ function extractThumbnailsFromDataAttachment(attributes?: any): {
 }
 
 /**
+ * Render an image reference as markdown, escaping whatever would break the syntax.
+ *
+ * Reading and writing use the same markdown here on purpose: it lets an agent feed a
+ * comment it just read straight back into editComment without losing the images.
+ */
+function toMarkdownImage(alt: string, url: string): string {
+  const safeAlt = alt.replace(/[\[\]\r\n]/g, " ").trim();
+  // Angle brackets let a URL with spaces or parentheses survive the round trip
+  const safeUrl = /[\s()]/.test(url) ? `<${url}>` : url;
+  return `![${safeAlt}](${safeUrl})`;
+}
+
+/**
  * Process an array of ClickUp text items into a structured content format
  * that includes both text and images in their original sequence
  *
@@ -123,8 +136,10 @@ export async function convertClickUpTextItemsToToolCallResult(
         continue;
       }
 
-      // Add image URL reference inline to current text block
-      currentTextBlock += `\nImage: ${imageFileName} - ${imageUrl}`;
+      // Reference the image in the same markdown syntax the write tools accept, so a
+      // comment read here can be handed back to editComment unchanged and keep its
+      // images - an existing ClickUp attachment URL is re-embedded without re-uploading.
+      currentTextBlock += `\n${toMarkdownImage(altText, imageUrl)}`;
 
       // Get working thumbnail URLs from data-attachment if available
       const extractedThumbnails = extractThumbnailsFromDataAttachment(item.attributes);
@@ -358,9 +373,9 @@ export function convertMarkdownToToolCallResult(
     // Check if this image URL exists in our attachments
     const attachment = attachmentMap.get(imageUrl);
     if (attachment) {
-      // Add image URL reference inline to current text block
+      // Keep the markdown syntax, so the reference stays usable in a write call
       const imageFileName = altText || "image";
-      currentTextBlock += `\nImage: ${imageFileName} - ${imageUrl}`;
+      currentTextBlock += `\n${toMarkdownImage(imageFileName, imageUrl)}`;
 
       // Only create image_metadata if we have at least one thumbnail (never use original image)
       if (attachment.thumbnail_large || attachment.thumbnail_medium || attachment.thumbnail_small) {
