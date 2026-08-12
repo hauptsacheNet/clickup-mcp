@@ -140,6 +140,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
         "Adds a comment to a specific task.",
         "LINKING BEST PRACTICES:",
         "- Always reference related tasks using ClickUp URLs (https://app.clickup.com/t/TASK_ID)",
+        "- Task URLs become live task references (chip with task name and status), so write them bare - any custom link text on a task URL is replaced by the live task name",
         "- Include task links when mentioning dependencies, related work, or follow-ups",
         "- Link to relevant lists, spaces, or other ClickUp entities when applicable",
         "PROGRESS UPDATES: Include current status, progress information, and next steps.",
@@ -241,6 +242,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
         "Editing does not reset the creation date, so the edit window does not get extended by editing.",
         IMAGE_SUPPORT_HINT,
         "IMAGES ON EDIT: reading a comment (getTaskById) returns its images as markdown, so passing that text back keeps them - an existing ClickUp attachment URL is re-embedded without uploading again. Only an image whose markdown you drop disappears.",
+        "Task URLs (https://app.clickup.com/t/TASK_ID) become live task references, and existing references are read back as such URLs - passing the text back keeps them.",
       ];
 
       if (CONFIG.primaryLanguageHint && CONFIG.primaryLanguageHint.toLowerCase() !== 'en') {

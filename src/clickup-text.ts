@@ -13,6 +13,9 @@ import type { Root, PhrasingContent, Link, Text, Content, Heading, Paragraph, Bl
 export interface ClickUpTextItem {
   text?: string;
   type?: string;
+  task_mention?: {
+    task_id?: string;
+  };
   image?: {
     id?: string;
     name?: string;
@@ -285,6 +288,11 @@ export async function convertClickUpTextItemsToToolCallResult(
         currentLine += formattedText;
       }
     }
+    // Task mentions render as the task URL so the reference survives the round trip:
+    // writing that URL back through addComment/editComment regenerates the mention.
+    else if (item.type === "task_mention" && item.task_mention?.task_id) {
+      currentLine += `https://app.clickup.com/t/${item.task_mention.task_id}`;
+    }
     // Handle other types of items like bookmarks or whatever clickup can think of
     else {
       currentTextBlock += JSON.stringify(item);
@@ -510,6 +518,13 @@ export interface ClickUpCommentBlock {
     list: 'bullet' | 'ordered' | 'unchecked' | 'checked';
   };
   /**
+   * Present on task mention fragments. ClickUp renders these as live task references
+   * showing the current task name, status and assignee.
+   */
+  task_mention?: {
+    task_id: string;
+  };
+  /**
    * Present on image fragments. ClickUp only renders a preview when this holds the
    * complete attachment object from the upload response - a bare URL string produces
    * an empty placeholder tile.
@@ -574,6 +589,24 @@ export function buildImageFragment(
     fragment.attributes = { alt: caption };
   }
   return fragment;
+}
+
+/**
+ * Matches a plain ClickUp task URL, with or without the team segment:
+ * https://app.clickup.com/t/86cb3t6t2 or https://app.clickup.com/t/4500611/86cb3t6t2
+ *
+ * Deliberately narrow: custom task IDs (PREFIX-123) and URLs carrying a query or
+ * fragment (e.g. ?comment=... deep links) do NOT match, because a mention would
+ * either not resolve or lose the anchor - those stay ordinary links.
+ */
+const CLICKUP_TASK_URL_PATTERN = /^https?:\/\/app\.clickup\.com\/t\/(?:\d+\/)?([a-z0-9]{6,12})\/?$/;
+
+/**
+ * Extract the task ID from a ClickUp task URL, or null if it is not one.
+ */
+export function parseClickUpTaskUrl(url: string): string | null {
+  const match = url.match(CLICKUP_TASK_URL_PATTERN);
+  return match ? match[1] : null;
 }
 
 /**
@@ -879,11 +912,20 @@ function walkPhrasingContent(
         }
         break;
 
-      case 'link':
-        // Link - recurse with link attribute
+      case 'link': {
+        // A link to a ClickUp task becomes a real task mention, matching what the
+        // ClickUp UI does when a task URL is pasted. The mention renders the live
+        // task name, so any custom link text is intentionally replaced by it.
+        const mentionedTaskId = parseClickUpTaskUrl(node.url);
+        if (mentionedTaskId) {
+          blocks.push({ type: 'task_mention', task_mention: { task_id: mentionedTaskId } });
+          break;
+        }
+        // Ordinary link - recurse with link attribute
         currentAttrs.link = node.url;
         walkPhrasingContent(node.children, currentAttrs, blocks, attachmentsBySrc);
         break;
+      }
 
       case 'break':
         // Line break - add as plain text
