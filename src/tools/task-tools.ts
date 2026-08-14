@@ -20,12 +20,12 @@ export function registerTaskToolsRead(server: McpServer, userData: any) {
       id: z
         .string()
         .min(6)
-        .max(9)
+        .max(16)
         .refine(val => isTaskId(val), {
-          message: "Task ID must be 6-9 alphanumeric characters only"
+          message: "Task ID must be 6-16 alphanumeric characters only"
         })
         .describe(
-          `The 6-9 character ID of the task to get without a prefix like "#", "CU-" or "https://app.clickup.com/t/"`
+          `The 6-16 character ID of the task to get without a prefix like "#", "CU-" or "https://app.clickup.com/t/"`
         ),
     },
     {
