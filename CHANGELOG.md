@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Documented that a broken image reference aborts the write - the README still described the pre-1.7.1 behaviour of writing the comment or task anyway.
+- **Markdown tables in comments were silently swallowed.** ClickUp comments cannot render tables at all (verified empirically - even a hand-crafted table attribute is stored but renders as plain text), and the converter dropped table content entirely: not even the cell text reached the comment. Tables are now re-rendered as column-aligned pipe tables inside a code block, so the information survives and stays readable in monospace. Reading such a comment returns the fenced pipe table, which converts back to the same code block on edit. The `addComment`/`editComment` tool descriptions now state that tables are unsupported and suggest lists instead.
+- **`~~strikethrough~~` lost its formatting.** ClickUp supports a `strike` attribute in comments, but the converter did not map GFM strikethrough to it, keeping only the plain text. Now mapped in both directions: writing `~~text~~` renders struck-through, and reading a struck-through comment returns `~~text~~`.
+- **Multi-line code blocks rendered only their last line as code.** ClickUp's Quill-based comment format applies block attributes per line, so every code line needs its own `\n` fragment carrying the `code-block` attribute - a single fragment with embedded newlines degraded all but the last line to plain text. Reading was equally wrong and wrapped every code line in its own ``` fence; consecutive code lines are now merged back into one fenced block.
+- Unknown block-level markdown nodes now fall back to emitting their text content instead of being dropped silently.
 
 ### Notes
 - ClickUp shows no "edited" marker on a changed comment and exposes none via the API, so readers who already saw the original will not notice the change. The tool description tells the model to prefer a follow-up comment once a discussion has started.
