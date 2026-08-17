@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.7.2] - 2026-08-17
 
 ### Added
 - **`editComment` tool** - replaces the text of an existing task comment instead of forcing a follow-up comment when something in a just-posted comment turns out to be wrong. Formatting and images survive the edit, because ClickUp's `PUT /comment/{id}` accepts the same rich fragment array as comment creation (undocumented - the API reference only lists `comment_text`, which would flatten the comment to plain text). Images are resolved and uploaded before the edit, so a broken image reference leaves the existing comment untouched.
@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - only comments belonging to the API token's own user can be edited, so other people's comments are safe
   - only comments created within `CLICKUP_COMMENT_EDIT_WINDOW_HOURS` (default 24) can be edited. Editing does not change the creation date, so the window cannot be extended by repeated edits.
 - New `CLICKUP_COMMENT_EDIT_WINDOW_HOURS` environment variable (default 24, `0` disables `editComment`). An unparsable value fails at startup instead of silently widening or disabling the window.
+- **`CLICKUP_COMMENT_EDIT_WINDOW_HOURS` and `MAX_UPLOAD_SIZE_MB` are now settable from the MCPB installer UI** instead of being reachable only by hand-editing the server env. Both are optional number fields with the same defaults as before, so an existing installation keeps behaving identically. An unset optional field can reach the server blank or as an unsubstituted `${user_config.x}` placeholder; both are now treated as "not configured". `MAX_UPLOAD_SIZE_MB` is also validated the same way as the edit window - it previously turned a typo into `NaN`, which compares false against every size and so lifted the upload limit instead of enforcing it.
 - **Task URLs in comments become live task references.** A ClickUp task URL in `addComment`/`editComment` markdown (bare or as a link) is converted to a real `task_mention` fragment, rendering as the same chip with live task name, status and assignee that the ClickUp UI creates - instead of a plain blue link. Custom link text on a task URL is replaced by the live task name; URLs with a query or fragment (e.g. `?comment=` deep links) and custom task IDs stay ordinary links. Reading a comment returns mentions as task URLs, so the `editComment` round trip preserves them. Task *descriptions* keep rendering task URLs as plain links - the public API's `markdown_description` cannot express mention chips (verified empirically: ClickUp neither converts URLs server-side nor re-hydrates its own flattened mention export).
 
 ### Changed

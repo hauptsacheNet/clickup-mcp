@@ -59,19 +59,37 @@ if (rawMode === 'read-minimal' || rawMode === 'read') {
 }
 
 /**
- * The edit window is a safety limit, so a typo must not silently widen it:
- * `parseFloat("Infinity")` would disable the age check altogether, and
- * `parseFloat("abc")` would quietly turn editing off.
+ * Numeric settings are exposed as optional MCPB user_config fields, so their env
+ * values can arrive blank or - if the host does not substitute an unset optional
+ * field - as the literal `${user_config.x}` placeholder. Both mean "not configured"
+ * and must fall back to the default rather than fail or turn into NaN.
  */
-function parseCommentEditWindowHours(raw: string | undefined): number {
-  if (!raw?.trim()) {
-    return 24;
+function readOptionalEnv(name: string): string | undefined {
+  const raw = process.env[name]?.trim();
+  if (!raw || /^\$\{.*}$/.test(raw)) {
+    return undefined;
+  }
+  return raw;
+}
+
+/**
+ * A typo must not silently change a limit: `parseFloat("Infinity")` would disable
+ * the comment age check altogether and `parseFloat("abc")` would yield NaN, which
+ * compares false against every size and so lifts the upload limit instead of
+ * enforcing it. Fail at startup instead.
+ */
+function parseNumericEnv(
+  name: string,
+  fallback: number,
+  { min, expectation }: { min: number; expectation: string }
+): number {
+  const raw = readOptionalEnv(name);
+  if (raw === undefined) {
+    return fallback;
   }
   const value = Number(raw);
-  if (!Number.isFinite(value) || value < 0) {
-    throw new Error(
-      `Invalid CLICKUP_COMMENT_EDIT_WINDOW_HOURS "${raw}". Expected a non-negative number of hours (0 disables editComment).`
-    );
+  if (!Number.isFinite(value) || value < min) {
+    throw new Error(`Invalid ${name} "${raw}". ${expectation}`);
   }
   return value;
 }
@@ -84,11 +102,17 @@ export const CONFIG = {
   // Upper bound for a single image uploaded to ClickUp. Unlike maxResponseSizeMB this is
   // not about context window budget - it only guards against accidentally pushing huge
   // files into a ticket.
-  maxUploadSizeMB: process.env.MAX_UPLOAD_SIZE_MB ? parseFloat(process.env.MAX_UPLOAD_SIZE_MB) : 10,
+  maxUploadSizeMB: parseNumericEnv("MAX_UPLOAD_SIZE_MB", 10, {
+    min: 0,
+    expectation: "Expected a positive number of megabytes.",
+  }),
   // How long after creation a comment may still be edited. ClickUp has no way to tell
   // "written by this MCP" apart from "written by the token owner in the UI", so this
   // window is the actual guard against rewriting history. 0 disables editing entirely.
-  commentEditWindowHours: parseCommentEditWindowHours(process.env.CLICKUP_COMMENT_EDIT_WINDOW_HOURS),
+  commentEditWindowHours: parseNumericEnv("CLICKUP_COMMENT_EDIT_WINDOW_HOURS", 24, {
+    min: 0,
+    expectation: "Expected a non-negative number of hours (0 disables editComment).",
+  }),
   primaryLanguageHint: detectedLanguageHint, // Store the cleaned code directly
   mode: mcpMode,
 };

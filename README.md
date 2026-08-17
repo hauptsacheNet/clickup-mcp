@@ -224,7 +224,7 @@ Add the mode to your MCP configuration:
 
 ## Configuration
 
-This MCP server can be configured using environment variables:
+This MCP server can be configured using environment variables. In the desktop extension (`.mcpb`) installer, the API key, team ID, primary language, upload size limit and comment edit window are offered as form fields; the remaining variables have to be set on the server environment directly.
 
 - `CLICKUP_API_KEY`: (Required) Your ClickUp API key.
 - `CLICKUP_TEAM_ID`: (Required) Your ClickUp Team ID (formerly Workspace ID).
