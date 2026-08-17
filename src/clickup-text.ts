@@ -104,10 +104,12 @@ export async function convertClickUpTextItemsToToolCallResult(
   // ClickUp emits one '\n' fragment with a code-block attribute per code LINE;
   // consecutive ones belong to the same fenced block when read back as markdown.
   let inCodeBlock = false;
+  let currentFenceLang = '';
   const closeCodeFence = () => {
     if (inCodeBlock) {
       currentTextBlock += '```\n';
       inCodeBlock = false;
+      currentFenceLang = '';
     }
   };
 
@@ -193,11 +195,20 @@ export async function convertClickUpTextItemsToToolCallResult(
     else if (typeof item.text === "string") {
       // Check if this is a newline with block formatting (header, blockquote, list)
       if (item.text === '\n' && item.attributes) {
-        // Code block formatting: append this line to the open fence (or open one)
+        // Code block formatting: append this line to the open fence (or open one).
+        // The attribute value carries the language, either directly or nested as
+        // {'code-block': lang}; 'plain' means no language.
         if (item.attributes['code-block']) {
+          const rawLang = item.attributes['code-block'];
+          const lang = typeof rawLang === 'string' ? rawLang : rawLang?.['code-block'] ?? '';
+          const fenceLang = lang === 'plain' ? '' : lang;
+          if (inCodeBlock && fenceLang !== currentFenceLang) {
+            closeCodeFence();
+          }
           if (!inCodeBlock) {
-            currentTextBlock += '```\n';
+            currentTextBlock += '```' + fenceLang + '\n';
             inCodeBlock = true;
+            currentFenceLang = fenceLang;
           }
           currentTextBlock += currentLine + '\n';
           currentLine = "";

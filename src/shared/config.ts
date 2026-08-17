@@ -103,7 +103,7 @@ export const CONFIG = {
   // not about context window budget - it only guards against accidentally pushing huge
   // files into a ticket.
   maxUploadSizeMB: parseNumericEnv("MAX_UPLOAD_SIZE_MB", 10, {
-    min: 0,
+    min: 1,
     expectation: "Expected a positive number of megabytes.",
   }),
   // How long after creation a comment may still be edited. ClickUp has no way to tell

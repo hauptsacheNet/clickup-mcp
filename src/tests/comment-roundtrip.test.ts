@@ -124,3 +124,28 @@ test("strike attribute reads back as ~~markdown~~ and re-converts to strike", as
   assert.ok(strike, "strike attribute must be regenerated on write");
   assert.equal(strike?.text, "obsolete");
 });
+
+test("code-block language survives the read/write round trip", async () => {
+  const { convertMarkdownToClickUpBlocks } = await import("../clickup-text");
+
+  // 1. Read: two code lines in a ts block, as ClickUp returns them (one
+  //    attributed '\n' fragment per line)
+  const blocks = await convertClickUpTextItemsToToolCallResult([
+    { text: "const a = 1;" },
+    { text: "\n", attributes: { "code-block": { "code-block": "ts" } } },
+    { text: "const b = 2;" },
+    { text: "\n", attributes: { "code-block": { "code-block": "ts" } } },
+    { text: "Done.\n" },
+  ]);
+
+  const text = blocks
+    .filter((b): b is { type: "text"; text: string } => b.type === "text")
+    .map((b) => b.text)
+    .join("\n");
+  assert.equal(text, "```ts\nconst a = 1;\nconst b = 2;\n```\nDone.");
+
+  // 2. Write the read-back text again: the language must reach ClickUp
+  const written = convertMarkdownToClickUpBlocks(text);
+  const marker = written.find((b) => b.attributes?.["code-block"] !== undefined);
+  assert.deepEqual(marker?.attributes?.["code-block"], { "code-block": "ts" });
+});
