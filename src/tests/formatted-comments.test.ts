@@ -147,3 +147,42 @@ test("convertMarkdownToClickUpBlocks handles mixed nested lists", () => {
   assert.ok(nestedNumber, "should have nested numbered item");
   assert.ok(deepBullet, "should have nested bullet inside numbered list");
 });
+
+test("convertMarkdownToClickUpBlocks maps strikethrough to strike attribute", () => {
+  const markdown = "This is ~~gone~~ now.";
+  const blocks = convertMarkdownToClickUpBlocks(markdown);
+
+  const strike = blocks.find(b => b.attributes?.strike === true);
+  assert.ok(strike, "should have strike block");
+  assert.equal(strike?.text, "gone");
+});
+
+test("convertMarkdownToClickUpBlocks renders tables as aligned code blocks", () => {
+  const markdown = [
+    "Before the table.",
+    "",
+    "| Col A | Column B |",
+    "|-------|----------|",
+    "| a1    | b1 with **bold** |",
+    "| a2    | b2 |",
+    "",
+    "After the table.",
+  ].join("\n");
+
+  const blocks = convertMarkdownToClickUpBlocks(markdown);
+
+  // The table must end up inside a code block, not vanish. Quill applies block
+  // attributes per line, so every table row must be followed by its own '\n'
+  // fragment carrying the code-block attribute.
+  const codeBlockMarkers = blocks.filter(b => b.text === '\n' && b.attributes?.['code-block'] !== undefined);
+  assert.equal(codeBlockMarkers.length, 4, "each table line needs its own code-block newline (header + separator + 2 rows)");
+
+  const allText = blocks.map(b => b.text ?? '').join('');
+  assert.ok(allText.includes('Col A'), "table cell content must survive");
+  assert.ok(allText.includes('| a1'), "row content must survive");
+  assert.ok(allText.includes('**bold**'), "inline formatting is kept literally");
+
+  // Surrounding paragraphs stay intact
+  assert.ok(blocks.some(b => b.text === 'Before the table.'), "text before table survives");
+  assert.ok(blocks.some(b => b.text === 'After the table.'), "text after table survives");
+});

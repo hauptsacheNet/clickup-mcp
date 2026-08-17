@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.7.2] - 2026-08-17
 
 ### Added
 - **`editComment` tool** - replaces the text of an existing task comment instead of forcing a follow-up comment when something in a just-posted comment turns out to be wrong. Formatting and images survive the edit, because ClickUp's `PUT /comment/{id}` accepts the same rich fragment array as comment creation (undocumented - the API reference only lists `comment_text`, which would flatten the comment to plain text). Images are resolved and uploaded before the edit, so a broken image reference leaves the existing comment untouched.
@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - only comments belonging to the API token's own user can be edited, so other people's comments are safe
   - only comments created within `CLICKUP_COMMENT_EDIT_WINDOW_HOURS` (default 24) can be edited. Editing does not change the creation date, so the window cannot be extended by repeated edits.
 - New `CLICKUP_COMMENT_EDIT_WINDOW_HOURS` environment variable (default 24, `0` disables `editComment`). An unparsable value fails at startup instead of silently widening or disabling the window.
+- **`CLICKUP_COMMENT_EDIT_WINDOW_HOURS` and `MAX_UPLOAD_SIZE_MB` are now settable from the MCPB installer UI** instead of being reachable only by hand-editing the server env. Both are optional number fields with the same defaults as before, so an existing installation keeps behaving identically. An unset optional field can reach the server blank or as an unsubstituted `${user_config.x}` placeholder; both are now treated as "not configured". `MAX_UPLOAD_SIZE_MB` is also validated the same way as the edit window - it previously turned a typo into `NaN`, which compares false against every size and so lifted the upload limit instead of enforcing it.
 - **Task URLs in comments become live task references.** A ClickUp task URL in `addComment`/`editComment` markdown (bare or as a link) is converted to a real `task_mention` fragment, rendering as the same chip with live task name, status and assignee that the ClickUp UI creates - instead of a plain blue link. Custom link text on a task URL is replaced by the live task name; URLs with a query or fragment (e.g. `?comment=` deep links) and custom task IDs stay ordinary links. Reading a comment returns mentions as task URLs, so the `editComment` round trip preserves them. Task *descriptions* keep rendering task URLs as plain links - the public API's `markdown_description` cannot express mention chips (verified empirically: ClickUp neither converts URLs server-side nor re-hydrates its own flattened mention export).
 
 ### Changed
@@ -20,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Documented that a broken image reference aborts the write - the README still described the pre-1.7.1 behaviour of writing the comment or task anyway.
+- **Markdown tables in comments were silently swallowed.** ClickUp comments cannot render tables at all (verified empirically - even a hand-crafted table attribute is stored but renders as plain text), and the converter dropped table content entirely: not even the cell text reached the comment. Tables are now re-rendered as column-aligned pipe tables inside a code block, so the information survives and stays readable in monospace. Reading such a comment returns the fenced pipe table, which converts back to the same code block on edit. The `addComment`/`editComment` tool descriptions now state that tables are unsupported and suggest lists instead.
+- **`~~strikethrough~~` lost its formatting.** ClickUp supports a `strike` attribute in comments, but the converter did not map GFM strikethrough to it, keeping only the plain text. Now mapped in both directions: writing `~~text~~` renders struck-through, and reading a struck-through comment returns `~~text~~`.
+- **Multi-line code blocks rendered only their last line as code.** ClickUp's Quill-based comment format applies block attributes per line, so every code line needs its own `\n` fragment carrying the `code-block` attribute - a single fragment with embedded newlines degraded all but the last line to plain text. Reading was equally wrong and wrapped every code line in its own ``` fence; consecutive code lines are now merged back into one fenced block.
+- Unknown block-level markdown nodes now fall back to emitting their text content instead of being dropped silently.
 
 ### Notes
 - ClickUp shows no "edited" marker on a changed comment and exposes none via the API, so readers who already saw the original will not notice the change. The tool description tells the model to prefer a follow-up comment once a discussion has started.

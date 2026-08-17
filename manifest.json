@@ -3,7 +3,7 @@
   "name": "@hauptsache.net/clickup-mcp",
   "display_name": "ClickUp",
   "icon": "icon-72x72.png",
-  "version": "1.7.1",
+  "version": "1.7.2",
   "description": "Search, create, and retrieve tasks and documents, add comments, and track time through natural language commands.",
   "author": {
     "name": "Marco Pfeiffer",
@@ -22,7 +22,9 @@
       "env": {
         "CLICKUP_API_KEY": "${user_config.clickup_api_key}",
         "CLICKUP_TEAM_ID": "${user_config.clickup_team_id}",
-        "CLICKUP_PRIMARY_LANGUAGE": "${user_config.clickup_primary_language}"
+        "CLICKUP_PRIMARY_LANGUAGE": "${user_config.clickup_primary_language}",
+        "CLICKUP_COMMENT_EDIT_WINDOW_HOURS": "${user_config.clickup_comment_edit_window_hours}",
+        "MAX_UPLOAD_SIZE_MB": "${user_config.max_upload_size_mb}"
       }
     }
   },
@@ -104,6 +106,22 @@
       "title": "Primary Language",
       "description": "Primary language hint for search optimization (e.g., 'de' for German, 'en' for English)",
       "required": false
+    },
+    "clickup_comment_edit_window_hours": {
+      "type": "number",
+      "title": "Comment Edit Window (hours)",
+      "description": "How long after creation editComment may still rewrite one of your own comments. Set to 0 to disable comment editing entirely.",
+      "required": false,
+      "default": 24,
+      "min": 0
+    },
+    "max_upload_size_mb": {
+      "type": "number",
+      "title": "Max Image Upload Size (MB)",
+      "description": "Upper bound for a single image uploaded to a comment or task description.",
+      "required": false,
+      "default": 10,
+      "min": 1
     }
   },
   "keywords": [

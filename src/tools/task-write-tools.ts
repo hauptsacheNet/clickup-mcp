@@ -20,6 +20,15 @@ import {
  * Shared wording for the image support of every markdown field in this file.
  * Kept in one place so the tools stay consistent about what a client may pass.
  */
+/**
+ * Shared wording for what markdown ClickUp comments can actually render.
+ * Kept in one place so addComment and editComment stay consistent.
+ */
+const COMMENT_FORMATTING_HINT = [
+  "FORMATTING: Headings, **bold**, *italic*, ~~strikethrough~~, `inline code`, code blocks, links, blockquotes, bullet/numbered/nested lists and checkboxes (- [ ] / - [x]) all render natively.",
+  "TABLES ARE NOT SUPPORTED by ClickUp comments - a markdown table is automatically converted to a monospace code block, which is readable but plain. Prefer bold labels or lists over tables when writing comments.",
+].join("\n");
+
 const IMAGE_SUPPORT_HINT = [
   "IMAGES: Reference images with normal markdown - `![caption](/absolute/path/to/screenshot.png)`.",
   "This server runs locally, so a local file path is read and uploaded automatically - never inline a screenshot as base64 when a path exists, it costs orders of magnitude more tokens.",
@@ -144,6 +153,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
         "- Include task links when mentioning dependencies, related work, or follow-ups",
         "- Link to relevant lists, spaces, or other ClickUp entities when applicable",
         "PROGRESS UPDATES: Include current status, progress information, and next steps.",
+        COMMENT_FORMATTING_HINT,
         IMAGE_SUPPORT_HINT,
         "IMAGE LAYOUT: An image inside a numbered list breaks ClickUp's numbering. Write walkthrough steps as bold lines with a blank line before and after the image instead (`**1. Open the login page**`).",
         "If external links are provided, verify they are publicly accessible and incorporate relevant information.",
@@ -240,6 +250,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
         `GUARDRAILS: only comments written by the API token's own user can be edited, and only within ${CONFIG.commentEditWindowHours} hours of their creation. Older comments and other people's comments must be answered with a new comment via addComment.`,
         "ClickUp shows no 'edited' marker, so people who already read the comment will not notice the change - for anything that changes meaning after a discussion has started, prefer a follow-up comment.",
         "Editing does not reset the creation date, so the edit window does not get extended by editing.",
+        COMMENT_FORMATTING_HINT,
         IMAGE_SUPPORT_HINT,
         "IMAGES ON EDIT: reading a comment (getTaskById) returns its images as markdown, so passing that text back keeps them - an existing ClickUp attachment URL is re-embedded without uploading again. Only an image whose markdown you drop disappears.",
         "Task URLs (https://app.clickup.com/t/TASK_ID) become live task references, and existing references are read back as such URLs - passing the text back keeps them.",

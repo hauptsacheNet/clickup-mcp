@@ -5,7 +5,7 @@ import { parseDataUri } from "./shared/data-uri";
 import { unified } from 'unified';
 import remarkParse from 'remark-parse';
 import remarkGfm from 'remark-gfm';
-import type { Root, PhrasingContent, Link, Text, Content, Heading, Paragraph, Blockquote, List, ListItem, Code } from 'mdast';
+import type { Root, PhrasingContent, Link, Text, Content, Heading, Paragraph, Blockquote, List, ListItem, Code, Table, TableRow, TableCell } from 'mdast';
 
 /**
  * Represents a ClickUp text item which can be plain text or an image
@@ -98,13 +98,27 @@ export async function convertClickUpTextItemsToToolCallResult(
   // Track current formatting state to avoid unnecessary close/reopen
   let activeBold = false;
   let activeItalic = false;
+  let activeStrike = false;
   let activeCode = false;
+
+  // ClickUp emits one '\n' fragment with a code-block attribute per code LINE;
+  // consecutive ones belong to the same fenced block when read back as markdown.
+  let inCodeBlock = false;
+  let currentFenceLang = '';
+  const closeCodeFence = () => {
+    if (inCodeBlock) {
+      currentTextBlock += '```\n';
+      inCodeBlock = false;
+      currentFenceLang = '';
+    }
+  };
 
   for (let i = 0; i < textItems.length; i++) {
     const item = textItems[i];
 
     // Handle image items
     if (item.type === "image" && item.image && item.image.url) {
+      closeCodeFence();
       const imageFileName = item.image.name || item.image.title || "image";
       const imageUrl = item.image.url;
       const altText = item.text || imageFileName;
@@ -181,6 +195,29 @@ export async function convertClickUpTextItemsToToolCallResult(
     else if (typeof item.text === "string") {
       // Check if this is a newline with block formatting (header, blockquote, list)
       if (item.text === '\n' && item.attributes) {
+        // Code block formatting: append this line to the open fence (or open one).
+        // The attribute value carries the language, either directly or nested as
+        // {'code-block': lang}; 'plain' means no language.
+        if (item.attributes['code-block']) {
+          const rawLang = item.attributes['code-block'];
+          const lang = typeof rawLang === 'string' ? rawLang : rawLang?.['code-block'] ?? '';
+          const fenceLang = lang === 'plain' ? '' : lang;
+          if (inCodeBlock && fenceLang !== currentFenceLang) {
+            closeCodeFence();
+          }
+          if (!inCodeBlock) {
+            currentTextBlock += '```' + fenceLang + '\n';
+            inCodeBlock = true;
+            currentFenceLang = fenceLang;
+          }
+          currentTextBlock += currentLine + '\n';
+          currentLine = "";
+          continue;
+        }
+
+        // Any other line terminator ends a code block
+        closeCodeFence();
+
         // Header formatting
         if (item.attributes.header) {
           const level = item.attributes.header;
@@ -212,18 +249,8 @@ export async function convertClickUpTextItemsToToolCallResult(
               break;
           }
         }
-        // Code block formatting
-        else if (item.attributes['code-block']) {
-          // Wrap the current line in code block markers
-          currentLine = '```\n' + currentLine + '\n```';
-        }
-
         // Add formatted line to text block
-        currentTextBlock += currentLine;
-        // Add newline unless it's code block (already has newlines)
-        if (!item.attributes['code-block']) {
-          currentTextBlock += '\n';
-        }
+        currentTextBlock += currentLine + '\n';
         currentLine = ""; // Reset for next line
         continue;
       }
@@ -234,16 +261,19 @@ export async function convertClickUpTextItemsToToolCallResult(
       // Determine current and next formatting state
       const hasBold = item.attributes?.bold === true;
       const hasItalic = item.attributes?.italic === true;
+      const hasStrike = item.attributes?.strike === true;
       const hasLink = item.attributes?.link;
 
       // Look ahead to next non-newline block
       let nextHasBold = false;
       let nextHasItalic = false;
+      let nextHasStrike = false;
       for (let j = i + 1; j < textItems.length; j++) {
         const nextItem = textItems[j];
         if (nextItem.text !== '\n' || !nextItem.attributes) {
           nextHasBold = nextItem.attributes?.bold === true;
           nextHasItalic = nextItem.attributes?.italic === true;
+          nextHasStrike = nextItem.attributes?.strike === true;
           break;
         }
       }
@@ -252,14 +282,17 @@ export async function convertClickUpTextItemsToToolCallResult(
       let prefix = "";
       if (hasBold && !activeBold) prefix += "**";
       if (hasItalic && !activeItalic) prefix += "*";
+      if (hasStrike && !activeStrike) prefix += "~~";
 
       // Build suffix (close formatting that won't continue)
       let suffix = "";
+      if (hasStrike && !nextHasStrike) suffix += "~~";
       if (hasItalic && !nextHasItalic) suffix += "*";
       if (hasBold && !nextHasBold) suffix += "**";
 
       // Close formatting that's active but not in this block
       let closingPrefix = "";
+      if (activeStrike && !hasStrike) closingPrefix += "~~";
       if (activeBold && !hasBold) closingPrefix += "**";
       if (activeItalic && !hasItalic) closingPrefix += "*";
 
@@ -268,6 +301,7 @@ export async function convertClickUpTextItemsToToolCallResult(
       // Update state
       activeBold = hasBold && nextHasBold;
       activeItalic = hasItalic && nextHasItalic;
+      activeStrike = hasStrike && nextHasStrike;
 
       // Link formatting (wraps everything)
       if (hasLink) {
@@ -282,6 +316,7 @@ export async function convertClickUpTextItemsToToolCallResult(
       // Add to current line (not text block yet)
       if (item.text === '\n') {
         // Plain newline without formatting
+        closeCodeFence();
         currentTextBlock += currentLine + '\n';
         currentLine = "";
       } else {
@@ -300,6 +335,7 @@ export async function convertClickUpTextItemsToToolCallResult(
   }
 
   // Add any remaining text
+  closeCodeFence();
   if (currentLine) {
     currentTextBlock += currentLine;
   }
@@ -499,6 +535,7 @@ export interface ClickUpCommentBlock {
   attributes?: {
     bold?: boolean;
     italic?: boolean;
+    strike?: boolean;
     code?: boolean;
     link?: string;
     'code-block'?: {
@@ -822,11 +859,7 @@ function walkMdastNodes(
         // Code block
         const codeNode = node as Code;
         if (codeNode.value) {
-          blocks.push({ text: codeNode.value, attributes: {} });
-          blocks.push({
-            text: '\n',
-            attributes: { 'code-block': { 'code-block': codeNode.lang || 'plain' } }
-          });
+          pushCodeBlockLines(blocks, codeNode.value, codeNode.lang || 'plain');
         }
         break;
 
@@ -835,14 +868,122 @@ function walkMdastNodes(
         blocks.push({ text: '\n', attributes: {} });
         break;
 
+      case 'table': {
+        // ClickUp comments cannot render tables (there is no table fragment in the
+        // comment format - unknown attributes are stored but render as plain text).
+        // Re-render the table as an aligned pipe table inside a code block so the
+        // information survives and stays readable in monospace.
+        const tableText = serializeTableAsAlignedPipes(node as Table);
+        if (tableText) {
+          pushCodeBlockLines(blocks, tableText, 'plain');
+        }
+        break;
+      }
+
       default:
         // For any other block-level nodes, try to process children
         if ('children' in node && Array.isArray(node.children)) {
           walkMdastNodes(node.children as Content[], currentAttrs, blocks, depth, attachmentsBySrc);
+        } else if ('value' in node && typeof (node as any).value === 'string') {
+          // Last-resort safety net: never drop text content silently
+          blocks.push({ text: (node as any).value, attributes: {} });
         }
         break;
     }
   }
+}
+
+/**
+ * Emit a (possibly multi-line) code block the way ClickUp's Quill-based format
+ * expects it: block attributes apply per line, so EVERY line needs its own '\n'
+ * fragment carrying the code-block attribute. A single text fragment with embedded
+ * newlines renders only its last line as code - the rest degrades to plain text.
+ */
+function pushCodeBlockLines(blocks: ClickUpCommentBlock[], code: string, lang: string): void {
+  for (const line of code.split('\n')) {
+    if (line) {
+      blocks.push({ text: line, attributes: {} });
+    }
+    blocks.push({
+      text: '\n',
+      attributes: { 'code-block': { 'code-block': lang } }
+    });
+  }
+}
+
+/**
+ * Serialize phrasing content back to compact markdown for use inside a code block.
+ * Inline formatting markers are kept so nothing is lost, even though a code block
+ * renders them literally.
+ */
+function serializePhrasingToMarkdown(nodes: PhrasingContent[]): string {
+  let out = '';
+  for (const node of nodes) {
+    switch (node.type) {
+      case 'text':
+        out += node.value;
+        break;
+      case 'strong':
+        out += `**${serializePhrasingToMarkdown(node.children)}**`;
+        break;
+      case 'emphasis':
+        out += `*${serializePhrasingToMarkdown(node.children)}*`;
+        break;
+      case 'delete':
+        out += `~~${serializePhrasingToMarkdown(node.children)}~~`;
+        break;
+      case 'inlineCode':
+        out += `\`${node.value}\``;
+        break;
+      case 'link':
+        out += `[${serializePhrasingToMarkdown(node.children)}](${node.url})`;
+        break;
+      case 'image':
+        out += node.alt || node.url;
+        break;
+      case 'break':
+        out += ' ';
+        break;
+      default:
+        if ('value' in node && typeof (node as any).value === 'string') {
+          out += (node as any).value;
+        } else if ('children' in node && Array.isArray((node as any).children)) {
+          out += serializePhrasingToMarkdown((node as any).children);
+        }
+        break;
+    }
+  }
+  return out;
+}
+
+/**
+ * Render an mdast table as a column-aligned pipe table string.
+ */
+function serializeTableAsAlignedPipes(table: Table): string {
+  const rows: string[][] = table.children.map((row) =>
+    (row as TableRow).children.map((cell) =>
+      serializePhrasingToMarkdown((cell as TableCell).children).replace(/\|/g, '\\|').trim()
+    )
+  );
+  if (rows.length === 0) {
+    return '';
+  }
+
+  const colCount = Math.max(...rows.map((r) => r.length));
+  const widths: number[] = [];
+  for (let col = 0; col < colCount; col++) {
+    widths[col] = Math.max(3, ...rows.map((r) => (r[col] ?? '').length));
+  }
+
+  const renderRow = (cells: string[]): string =>
+    '| ' + widths.map((w, col) => (cells[col] ?? '').padEnd(w)).join(' | ') + ' |';
+
+  const lines = [renderRow(rows[0])];
+  lines.push('| ' + widths.map((w) => '-'.repeat(w)).join(' | ') + ' |');
+  for (const row of rows.slice(1)) {
+    lines.push(renderRow(row));
+  }
+  return lines.join('\n');
 }
 
 /**
@@ -898,6 +1039,12 @@ function walkPhrasingContent(
       case 'emphasis':
         // Italic text - recurse with italic attribute
         currentAttrs.italic = true;
+        walkPhrasingContent(node.children, currentAttrs, blocks, attachmentsBySrc);
+        break;
+
+      case 'delete':
+        // GFM strikethrough (~~text~~) - ClickUp renders this via the strike attribute
+        currentAttrs.strike = true;
         walkPhrasingContent(node.children, currentAttrs, blocks, attachmentsBySrc);
         break;
 
