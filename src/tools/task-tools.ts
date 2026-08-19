@@ -357,6 +357,35 @@ export async function generateTaskMetadata(task: any, timeEntries?: any[], isDet
     metadataLines.push(`child_task_ids: ${task.subtasks.map((st: any) => st.id).join(', ')}`);
   }
 
+  // Add dependencies if they exist. The API returns a single flat `dependencies`
+  // array for both directions; which side of the pair this task sits on decides
+  // whether it is waiting on the other task or blocking it.
+  if (task.dependencies && task.dependencies.length > 0) {
+    const waitingOn = task.dependencies
+      .filter((dep: any) => dep.task_id === task.id)
+      .map((dep: any) => dep.depends_on);
+    const blocking = task.dependencies
+      .filter((dep: any) => dep.depends_on === task.id)
+      .map((dep: any) => dep.task_id);
+
+    if (waitingOn.length > 0) {
+      metadataLines.push(`waiting_on: ${waitingOn.join(', ')}`);
+    }
+    if (blocking.length > 0) {
+      metadataLines.push(`blocking: ${blocking.join(', ')}`);
+    }
+  }
+
+  // Add linked (related, non-blocking) tasks if they exist
+  if (task.linked_tasks && task.linked_tasks.length > 0) {
+    const linked = task.linked_tasks
+      .map((link: any) => (link.task_id === task.id ? link.link_id : link.task_id))
+      .filter((id: any) => id);
+
+    if (linked.length > 0) {
+      metadataLines.push(`linked_tasks: ${linked.join(', ')}`);
+    }
+  }
 
   // Add archived status if true
   if (task.archived) {
