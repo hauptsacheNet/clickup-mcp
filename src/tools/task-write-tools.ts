@@ -663,6 +663,31 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
 
         const createdTask = await response.json();
 
+        // Tags are omitted from the create body by buildTaskRequestBody because they
+        // need the dedicated tag endpoints, so apply them here - the same way
+        // updateTask does - otherwise the requested tags are silently dropped.
+        const tagCreateResults: string[] = [];
+        if (tags !== undefined && tags.length > 0) {
+          for (const tagName of tags) {
+            try {
+              const addTagResponse = await fetch(
+                `https://api.clickup.com/api/v2/task/${createdTask.id}/tag/${encodeURIComponent(tagName)}`,
+                {
+                  method: 'POST',
+                  headers: { Authorization: CONFIG.apiKey }
+                }
+              );
+              if (!addTagResponse.ok) {
+                console.error(`Failed to add tag "${tagName}": ${addTagResponse.status}`);
+                tagCreateResults.push(`Failed to add tag: ${tagName}`);
+              }
+            } catch (error) {
+              console.error(`Error adding tag "${tagName}":`, error);
+              tagCreateResults.push(`Error adding tag: ${tagName}`);
+            }
+          }
+        }
+
         // Images can only be attached once the task exists, so the description is
         // written first with its original sources and then rewritten to the CDN URLs.
         // At this point every source resolved successfully - only the upload API
@@ -705,6 +730,9 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
 
         responseLines.push(...formatAttachedImages(uploaded));
         responseLines.push(...imageWarnings);
+        if (tagCreateResults.length > 0) {
+          responseLines.push('tag_warnings: ' + tagCreateResults.join('; '));
+        }
 
         return {
           content: [
