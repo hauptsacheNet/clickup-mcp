@@ -4,12 +4,15 @@ import Fuse from 'fuse.js';
 const GLOBAL_REFRESH_INTERVAL = 60000; // 60 seconds - that is the rate limit time frame
 
 /**
- * Checks if a string looks like a valid ClickUp task ID
- * Valid task IDs are 6-9 characters long and contain only alphanumeric characters
+ * Checks if a string looks like a valid ClickUp task ID (search heuristic).
+ * Two shapes: default IDs (alphanumeric, 6+ chars - covers 9, 10, 11+ as ClickUp grows)
+ * and custom IDs (a letter-led prefix, a hyphen, then digits, e.g. "GH-123").
+ * Kept deliberately selective so the search-tools direct-fetch path isn't triggered
+ * by ordinary hyphenated terms like "follow-up".
  */
 export function isTaskId(str: string): boolean {
-  // Task IDs are 6-9 characters long and contain only alphanumeric characters
-  return /^[a-z0-9]{6,9}$/i.test(str);
+  // Default IDs: 6+ alphanumeric. Custom IDs: PREFIX-<digits>.
+  return /^([a-z0-9]{6,}|[a-z][a-z0-9]*-\d+)$/i.test(str);
 }
 
 // Cache for current user info to avoid repeated API calls and race conditions

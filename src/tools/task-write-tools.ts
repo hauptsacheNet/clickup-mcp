@@ -168,7 +168,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
       return descriptionBase.join("\n");
     })(),
     {
-      task_id: z.string().min(6).max(9).describe("The 6-9 character task ID to comment on"),
+      task_id: z.string().describe("The task ID to comment on (validated by the ClickUp API)"),
       comment: z.string().min(1).describe("The comment text to add to the task"),
     },
     {
@@ -364,7 +364,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
       return descriptionBase.join("\n");
     })(),
     {
-      task_id: z.string().min(6).max(9).describe("The 6-9 character task ID to update"),
+      task_id: z.string().describe("The task ID to update (validated by the ClickUp API)"),
       name: taskNameSchema.optional(),
       append_description: z.string().optional().describe("Optional markdown content to APPEND to existing task description (preserves existing content for safety)"),
       status: z.string().optional().describe("Optional new status name - use getListInfo to see valid options"),

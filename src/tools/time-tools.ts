@@ -60,7 +60,7 @@ export function registerTimeToolsRead(server: McpServer) {
     "getTimeEntries",
     "Gets time entries for a specific task or all user's time entries. Returns last 30 days by default if no dates specified.",
     {
-      task_id: z.string().min(6).max(9).optional().describe("Optional 6-9 character task ID to filter entries. If not provided, returns all user's time entries."),
+      task_id: z.string().optional().describe("Optional task ID to filter entries. If not provided, returns all user's time entries."),
       start_date: z.string().optional().describe("Optional start date filter as ISO date string (e.g., '2024-10-06T00:00:00+02:00'). Defaults to 30 days ago."),
       end_date: z.string().optional().describe("Optional end date filter as ISO date string (e.g., '2024-10-06T23:59:59+02:00'). Defaults to current date."),
       list_id: z.string().optional().describe("Optional single list ID to filter time entries by a specific list"),
@@ -330,7 +330,7 @@ export function registerTimeToolsWrite(server: McpServer) {
       "Suggest moving the task to an active status like 'in progress' first."
     ].join("\n"),
     {
-      task_id: z.string().min(6).max(9).describe("The 6-9 character task ID to book time against"),
+      task_id: z.string().describe("The task ID to book time against (validated by the ClickUp API)"),
       hours: z.number().min(0.01).max(24).describe("Hours to book (decimal format, e.g., 0.25 = 15min, 1.5 = 1h 30min)"),
       description: z.string().optional().describe("Optional description for the time entry"),
       start_time: z.string().optional().describe("Optional start time as ISO date string (e.g., '2024-10-06T09:00:00+02:00', defaults to current time)")
