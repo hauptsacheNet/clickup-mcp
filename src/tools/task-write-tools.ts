@@ -20,6 +20,7 @@ import {
   ExistingComment,
   MAX_COMMENT_PAGES,
   fetchCommentPage,
+  findTopLevelComment,
 } from "../shared/comments";
 
 /**
@@ -187,6 +188,22 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
     },
     async ({ task_id, comment, parent_comment_id }) => {
       try {
+        // The reply endpoint anchors the reply to the parent comment's task and
+        // ignores task_id, while images below are uploaded to task_id - so the
+        // parent must verifiably be a top-level comment of THIS task before
+        // anything is written. This also rejects reply ids (nested replies are
+        // not supported by ClickUp's one-level threads).
+        if (parent_comment_id) {
+          const parent = await findTopLevelComment(task_id, parent_comment_id);
+          if (!parent) {
+            throw new Error(
+              `Comment ${parent_comment_id} is not a top-level comment of task ${task_id}, so no reply was posted. ` +
+              `parent_comment_id must be the comment_id of a top-level comment of this task as returned by getTaskById - ` +
+              `a reply's id or a comment of another task cannot be used.`
+            );
+          }
+        }
+
         // Resolve and upload referenced images first - the fragments need the
         // attachment objects from the upload response, a bare URL renders as an
         // empty tile. Any image problem aborts BEFORE the comment is posted, so
@@ -232,7 +249,10 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
               text: [
                 parent_comment_id ? `Reply added successfully!` : `Comment added successfully!`,
                 `comment_id: ${commentData.id || 'N/A'}`,
-                ...(parent_comment_id ? [`parent_comment_id: ${parent_comment_id}`] : []),
+                ...(parent_comment_id ? [
+                  `parent_comment_id: ${parent_comment_id}`,
+                  `note: ClickUp threads are one level deep - a reply's comment_id cannot be used as parent_comment_id or with editComment.`,
+                ] : []),
                 `task_id: ${task_id}`,
                 `comment: ${summarizeMarkdownForEcho(comment)}`,
                 `date: ${timestampToIso(commentData.date || Date.now())}`,
@@ -281,7 +301,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
     })(),
     {
       task_id: z.string().min(6).max(16).describe("The 6-16 character ID of the task the comment belongs to - needed to locate the comment and to upload images"),
-      comment_id: z.string().min(1).describe("The ID of the comment to edit, as returned by addComment or getTaskById"),
+      comment_id: z.string().min(1).describe("The ID of the comment to edit, as returned by addComment or getTaskById. Only top-level comments can be edited - replies inside a thread cannot."),
       comment: z.string().min(1).describe("The new comment text, replacing the previous text completely"),
     },
     {

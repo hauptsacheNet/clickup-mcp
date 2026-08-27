@@ -78,7 +78,7 @@ Turn natural language into powerful ClickUp actions:
 - Filter by assignees, projects, status, and metadata
 
 ### 💬 **Complete Context**
-- Full comment histories and team discussions, including threaded comment replies
+- Comment histories and team discussions (up to 250 top-level comments), including threaded comment replies
 - Task descriptions with embedded images  
 - List descriptions and project guidelines
 - Document content with page navigation

@@ -5,7 +5,7 @@ import { ContentBlock, DatedContentEvent, ImageMetadataBlock } from "../shared/t
 import { CONFIG } from "../shared/config";
 import { isTaskId, getSpaceDetails, getAllTeamMembers } from "../shared/utils";
 import { downloadImages } from "../shared/image-processing";
-import { ExistingComment, fetchAllTopLevelComments, fetchCommentReplies } from "../shared/comments";
+import { ExistingComment, fetchAllTopLevelComments, fetchRepliesByComment } from "../shared/comments";
 
 // Read-specific utility functions
 
@@ -138,29 +138,43 @@ async function loadTaskComments(id: string): Promise<DatedContentEvent[]> {
     return [];
   }
 
+  // Replies live behind their own endpoint and are missing from the comment
+  // list. Only threads (reply_count > 0) cost extra requests, bounded in count
+  // and concurrency to protect the API budget.
+  const repliesByComment = await fetchRepliesByComment(comments);
+
+  const formatUser = (user: ExistingComment["user"]) =>
+    `${user?.username ?? "unknown"} (user_id: ${user?.id ?? "unknown"})`;
+
   const commentEvents: DatedContentEvent[] = await Promise.all(
-    comments.map(async (comment: any) => {
+    comments.map(async (comment) => {
       // The comment_id makes the comment addressable for editComment and for
       // threaded replies via addComment's parent_comment_id.
       const headerBlock: ContentBlock = {
         type: "text",
-        text: `Comment by ${comment.user.username} on ${timestampToIso(comment.date)} (comment_id: ${comment.id}):`,
+        text: `Comment by ${formatUser(comment.user)} on ${timestampToIso(comment.date)} (comment_id: ${comment.id}):`,
       };
 
-      const commentBodyBlocks: (ContentBlock | ImageMetadataBlock)[] = await convertClickUpTextItemsToToolCallResult(comment.comment);
+      const commentBodyBlocks: (ContentBlock | ImageMetadataBlock)[] = await convertClickUpTextItemsToToolCallResult(comment.comment ?? []);
       const contentBlocks: (ContentBlock | ImageMetadataBlock)[] = [headerBlock, ...commentBodyBlocks];
 
-      // Replies live behind their own endpoint and are missing from the comment
-      // list. Only threads (reply_count > 0) cost an extra request; they are
-      // rendered nested under their parent, oldest first.
-      if ((comment.reply_count ?? 0) > 0) {
-        const replies = await fetchCommentReplies(String(comment.id));
+      const replyCount = comment.reply_count ?? 0;
+      if (replyCount > 0) {
+        const replies = repliesByComment.get(String(comment.id)) ?? [];
         for (const reply of replies) {
           contentBlocks.push({
             type: "text",
-            text: `↳ Reply by ${reply.user?.username} on ${timestampToIso(reply.date)}:`,
+            text: `↳ Reply by ${formatUser(reply.user)} on ${timestampToIso(reply.date)} (comment_id: ${reply.id}):`,
           });
           contentBlocks.push(...await convertClickUpTextItemsToToolCallResult(reply.comment ?? []));
+        }
+        if (replies.length === 0) {
+          // The thread exists (reply_count says so) but its replies were skipped
+          // over the budget cap or failed to load - never pretend it is empty.
+          contentBlocks.push({
+            type: "text",
+            text: `↳ This comment has ${replyCount} repl${replyCount === 1 ? "y" : "ies"} that could not be loaded.`,
+          });
         }
       }
 
