@@ -5,6 +5,7 @@ import { ContentBlock, DatedContentEvent, ImageMetadataBlock } from "../shared/t
 import { CONFIG } from "../shared/config";
 import { isTaskId, getSpaceDetails, getAllTeamMembers } from "../shared/utils";
 import { downloadImages } from "../shared/image-processing";
+import { ExistingComment, fetchAllTopLevelComments, fetchCommentReplies } from "../shared/comments";
 
 // Read-specific utility functions
 
@@ -127,31 +128,45 @@ async function loadTaskContent(taskId: string): Promise<(ContentBlock | ImageMet
 }
 
 async function loadTaskComments(id: string): Promise<DatedContentEvent[]> {
-  const response = await fetch(
-    `https://api.clickup.com/api/v2/task/${id}/comment?start_date=0`, // Ensure all comments are fetched
-    { headers: { Authorization: CONFIG.apiKey } }
-  );
-  if (!response.ok) {
-    console.error(`Error fetching comments for task ${id}: ${response.status} ${response.statusText}`);
+  let comments: ExistingComment[];
+  try {
+    // The comment list only returns 25 top-level comments per page - page through
+    // all of them (the previous `?start_date=0` was silently ignored by ClickUp).
+    comments = await fetchAllTopLevelComments(id);
+  } catch (error) {
+    console.error(`Error fetching comments for task ${id}:`, error);
     return [];
   }
-  const commentsData = await response.json();
-  if (!commentsData.comments || !Array.isArray(commentsData.comments)) {
-    console.error(`Unexpected comment data structure for task ${id}`);
-    return [];
-  }
+
   const commentEvents: DatedContentEvent[] = await Promise.all(
-    commentsData.comments.map(async (comment: any) => {
+    comments.map(async (comment: any) => {
+      // The comment_id makes the comment addressable for editComment and for
+      // threaded replies via addComment's parent_comment_id.
       const headerBlock: ContentBlock = {
         type: "text",
-        text: `Comment by ${comment.user.username} on ${timestampToIso(comment.date)}:`,
+        text: `Comment by ${comment.user.username} on ${timestampToIso(comment.date)} (comment_id: ${comment.id}):`,
       };
 
       const commentBodyBlocks: (ContentBlock | ImageMetadataBlock)[] = await convertClickUpTextItemsToToolCallResult(comment.comment);
+      const contentBlocks: (ContentBlock | ImageMetadataBlock)[] = [headerBlock, ...commentBodyBlocks];
+
+      // Replies live behind their own endpoint and are missing from the comment
+      // list. Only threads (reply_count > 0) cost an extra request; they are
+      // rendered nested under their parent, oldest first.
+      if ((comment.reply_count ?? 0) > 0) {
+        const replies = await fetchCommentReplies(String(comment.id));
+        for (const reply of replies) {
+          contentBlocks.push({
+            type: "text",
+            text: `↳ Reply by ${reply.user?.username} on ${timestampToIso(reply.date)}:`,
+          });
+          contentBlocks.push(...await convertClickUpTextItemsToToolCallResult(reply.comment ?? []));
+        }
+      }
 
       return {
         date: comment.date, // String timestamp from ClickUp for sorting
-        contentBlocks: [headerBlock, ...commentBodyBlocks],
+        contentBlocks,
       };
     })
   );

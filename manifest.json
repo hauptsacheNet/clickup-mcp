@@ -32,11 +32,11 @@
   "tools": [
     {
       "name": "getTaskById",
-      "description": "Get a ClickUp task with images and comments by ID. Always use this URL when referencing tasks in conversations or sharing with others."
+      "description": "Get a ClickUp task with images and comments (including threaded comment replies) by ID. Always use this URL when referencing tasks in conversations or sharing with others."
     },
     {
       "name": "addComment",
-      "description": "Add a comment to a specific task with linking best practices and progress updates. Images written as markdown (local file paths, data URIs or URLs) are uploaded and embedded automatically."
+      "description": "Add a comment to a specific task, or reply inside an existing comment thread via parent_comment_id. Images written as markdown (local file paths, data URIs or URLs) are uploaded and embedded automatically."
     },
     {
       "name": "editComment",

@@ -15,6 +15,12 @@ import {
   toAttachmentMap,
   uploadResolvedImages,
 } from "../shared/attachments";
+import {
+  CommentPageCursor,
+  ExistingComment,
+  MAX_COMMENT_PAGES,
+  fetchCommentPage,
+} from "../shared/comments";
 
 /**
  * Shared wording for the image support of every markdown field in this file.
@@ -146,7 +152,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
     "addComment",
     (() => {
       const descriptionBase = [
-        "Adds a comment to a specific task.",
+        "Adds a comment to a specific task, or a threaded reply to an existing comment when `parent_comment_id` is set.",
         "LINKING BEST PRACTICES:",
         "- Always reference related tasks using ClickUp URLs (https://app.clickup.com/t/TASK_ID)",
         "- Task URLs become live task references (chip with task name and status), so write them bare - any custom link text on a task URL is replaced by the live task name",
@@ -170,13 +176,16 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
     {
       task_id: z.string().min(6).max(16).describe("The 6-16 character task ID to comment on"),
       comment: z.string().min(1).describe("The comment text to add to the task"),
+      parent_comment_id: z.string().min(1).optional().describe(
+        "Optional: reply inside an existing comment thread instead of posting a new top-level comment. Pass the comment_id of a TOP-LEVEL comment as returned by getTaskById or addComment - ClickUp threads are one level deep, so a reply cannot have replies of its own."
+      ),
     },
     {
       readOnlyHint: false,
       destructiveHint: false,
       idempotentHint: false,
     },
-    async ({ task_id, comment }) => {
+    async ({ task_id, comment, parent_comment_id }) => {
       try {
         // Resolve and upload referenced images first - the fragments need the
         // attachment objects from the upload response, a bare URL renders as an
@@ -194,7 +203,13 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
           notify_all: true
         };
 
-        const response = await fetch(`https://api.clickup.com/api/v2/task/${task_id}/comment`, {
+        // A threaded reply goes to the parent comment's reply endpoint; the body
+        // is identical to a top-level comment.
+        const url = parent_comment_id
+          ? `https://api.clickup.com/api/v2/comment/${parent_comment_id}/reply`
+          : `https://api.clickup.com/api/v2/task/${task_id}/comment`;
+
+        const response = await fetch(url, {
           method: 'POST',
           headers: {
             Authorization: CONFIG.apiKey,
@@ -215,8 +230,9 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
             {
               type: "text" as const,
               text: [
-                `Comment added successfully!`,
+                parent_comment_id ? `Reply added successfully!` : `Comment added successfully!`,
                 `comment_id: ${commentData.id || 'N/A'}`,
+                ...(parent_comment_id ? [`parent_comment_id: ${parent_comment_id}`] : []),
                 `task_id: ${task_id}`,
                 `comment: ${summarizeMarkdownForEcho(comment)}`,
                 `date: ${timestampToIso(commentData.date || Date.now())}`,
@@ -784,54 +800,6 @@ function formatTimeEstimate(hours: number): string {
   const displayHours = Math.floor(hours);
   const displayMinutes = Math.round((hours - displayHours) * 60);
   return displayHours > 0 ? `${displayHours}h ${displayMinutes}m` : `${displayMinutes}m`;
-}
-
-/** A task comment as returned by GET /api/v2/task/{task_id}/comment */
-interface ExistingComment {
-  id: string;
-  date: string;
-  comment_text?: string;
-  user?: { id?: number | string; username?: string };
-  reply_count?: number;
-}
-
-/** Cursor into the comment list: the date and id of the last comment of the previous page */
-interface CommentPageCursor {
-  start: string;
-  startId: string;
-}
-
-/**
- * Never page further back than this. A generous edit window would otherwise walk
- * the entire comment history of a busy ticket and eat the 100 calls/minute budget.
- */
-const MAX_COMMENT_PAGES = 10;
-
-/** One page of task comments, newest first, 25 per page */
-async function fetchCommentPage(
-  taskId: string,
-  cursor?: CommentPageCursor
-): Promise<ExistingComment[]> {
-  // Note there is no `start_date` parameter - passing one is silently ignored.
-  // Older pages are reached with `start` + `start_id` of the previous page's last entry.
-  const query = cursor
-    ? `?${new URLSearchParams({ start: cursor.start, start_id: cursor.startId })}`
-    : "";
-
-  const response = await fetch(
-    `https://api.clickup.com/api/v2/task/${taskId}/comment${query}`,
-    { headers: { Authorization: CONFIG.apiKey } }
-  );
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(
-      `Error loading comments of task ${taskId}: ${response.status} ${response.statusText} - ${JSON.stringify(errorData)}`
-    );
-  }
-
-  const data = await response.json();
-  return Array.isArray(data.comments) ? data.comments : [];
 }
 
 /**

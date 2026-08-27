@@ -78,7 +78,7 @@ Turn natural language into powerful ClickUp actions:
 - Filter by assignees, projects, status, and metadata
 
 ### 💬 **Complete Context**
-- Full comment histories and team discussions
+- Full comment histories and team discussions, including threaded comment replies
 - Task descriptions with embedded images  
 - List descriptions and project guidelines
 - Document content with page navigation
@@ -186,8 +186,8 @@ The ClickUp MCP supports three operational modes to balance functionality, secur
 
 | Tool                   | read-minimal | read | write | Description                                                                             |
 |------------------------|:------------:|:----:|:-----:|-----------------------------------------------------------------------------------------|
-| `getTaskById`          |      ✅       |  ✅   |   ✅   | Get complete task details including comments, images, and metadata                      |
-| `addComment`           |      ❌       |  ❌   |   ✅   | Add comments to tasks for collaboration                                                 |
+| `getTaskById`          |      ✅       |  ✅   |   ✅   | Get complete task details including comments (with threaded replies), images, and metadata |
+| `addComment`           |      ❌       |  ❌   |   ✅   | Add comments to tasks, or reply inside a comment thread via `parent_comment_id`         |
 | `editComment`          |      ❌       |  ❌   |   ✅   | Correct your own comment within 24h instead of posting a follow-up                      |
 | `updateTask`           |      ❌       |  ❌   |   ✅   | Update tasks (status, priority, assignees, etc.) with **SAFE APPEND-ONLY** descriptions |
 | `createTask`           |      ❌       |  ❌   |   ✅   | Create new tasks with full markdown support                                             |
