@@ -17,6 +17,7 @@ test('isTaskId accepts both legacy and current ClickUp task ID lengths', async (
 
   assert.equal(isTaskId('86ey1qwck'), true, '9-character IDs (pre-Aug 2026) must stay valid');
   assert.equal(isTaskId('z8nrz7c746'), true, '10-character IDs (post-Aug 2026) must be valid');
+  assert.equal(isTaskId('123yxuagf4a'), true, '11-character IDs (observed late Aug 2026) must be valid');
 });
 
 test('isTaskId still rejects strings that are not bare task IDs', async () => {

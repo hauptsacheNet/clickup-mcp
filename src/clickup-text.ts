@@ -599,7 +599,7 @@ export function buildImageFragment(
  * fragment (e.g. ?comment=... deep links) do NOT match, because a mention would
  * either not resolve or lose the anchor - those stay ordinary links.
  */
-const CLICKUP_TASK_URL_PATTERN = /^https?:\/\/app\.clickup\.com\/t\/(?:\d+\/)?([a-z0-9]{6,12})\/?$/;
+const CLICKUP_TASK_URL_PATTERN = /^https?:\/\/app\.clickup\.com\/t\/(?:\d+\/)?([a-z0-9]{6,16})\/?$/;
 
 /**
  * Extract the task ID from a ClickUp task URL, or null if it is not one.
