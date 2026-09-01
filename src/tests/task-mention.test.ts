@@ -10,6 +10,7 @@ test("parseClickUpTaskUrl accepts plain task URLs and rejects everything else", 
   assert.equal(parseClickUpTaskUrl("https://app.clickup.com/t/86cb3t6t2"), "86cb3t6t2");
   assert.equal(parseClickUpTaskUrl("https://app.clickup.com/t/4500611/86cb3t6t2"), "86cb3t6t2");
   assert.equal(parseClickUpTaskUrl("https://app.clickup.com/t/86cb3t6t2/"), "86cb3t6t2");
+  assert.equal(parseClickUpTaskUrl("https://app.clickup.com/t/123yxuagf4a"), "123yxuagf4a");
 
   // Deep links, custom IDs and non-task URLs must stay ordinary links
   assert.equal(parseClickUpTaskUrl("https://app.clickup.com/t/86cb3t6t2?comment=123"), null);

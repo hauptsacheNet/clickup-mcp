@@ -168,7 +168,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
       return descriptionBase.join("\n");
     })(),
     {
-      task_id: z.string().min(6).max(9).describe("The 6-9 character task ID to comment on"),
+      task_id: z.string().min(6).max(16).describe("The 6-16 character task ID to comment on"),
       comment: z.string().min(1).describe("The comment text to add to the task"),
     },
     {
@@ -264,7 +264,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
       return descriptionBase.join("\n");
     })(),
     {
-      task_id: z.string().min(6).max(9).describe("The 6-9 character ID of the task the comment belongs to - needed to locate the comment and to upload images"),
+      task_id: z.string().min(6).max(16).describe("The 6-16 character ID of the task the comment belongs to - needed to locate the comment and to upload images"),
       comment_id: z.string().min(1).describe("The ID of the comment to edit, as returned by addComment or getTaskById"),
       comment: z.string().min(1).describe("The new comment text, replacing the previous text completely"),
     },
@@ -364,7 +364,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
       return descriptionBase.join("\n");
     })(),
     {
-      task_id: z.string().min(6).max(9).describe("The 6-9 character task ID to update"),
+      task_id: z.string().min(6).max(16).describe("The 6-16 character task ID to update"),
       name: taskNameSchema.optional(),
       append_description: z.string().optional().describe("Optional markdown content to APPEND to existing task description (preserves existing content for safety)"),
       status: z.string().optional().describe("Optional new status name - use getListInfo to see valid options"),

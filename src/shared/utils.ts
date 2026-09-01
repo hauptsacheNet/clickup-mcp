@@ -5,11 +5,11 @@ const GLOBAL_REFRESH_INTERVAL = 60000; // 60 seconds - that is the rate limit ti
 
 /**
  * Checks if a string looks like a valid ClickUp task ID
- * Valid task IDs are 6-9 characters long and contain only alphanumeric characters
+ * Valid task IDs are 6-16 characters long and contain only alphanumeric characters
  */
 export function isTaskId(str: string): boolean {
-  // Task IDs are 6-9 characters long and contain only alphanumeric characters
-  return /^[a-z0-9]{6,9}$/i.test(str);
+  // Task IDs are 6-16 characters long and contain only alphanumeric characters
+  return /^[a-z0-9]{6,16}$/i.test(str);
 }
 
 // Cache for current user info to avoid repeated API calls and race conditions
