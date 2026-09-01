@@ -1010,7 +1010,16 @@ async function updateTaskDependencies(
   // Get current dependencies
   const currentBlocking = taskData.blocking?.map((dep: any) => dep.id) || [];
   const currentWaitingOn = taskData.waiting_on?.map((dep: any) => dep.id) || [];
-  const currentLinked = taskData.linked_tasks?.map((task: any) => task.id) || [];
+  // `linked_tasks` entries are link records, not tasks: each has `task_id` and
+  // `link_id` (the two ends of the link) and no `id` at all. Mapping `.id` here
+  // produced `[undefined, ...]`, so every existing link looked like it was no
+  // longer requested, and the removal loop then issued
+  // `DELETE /task/{id}/link/undefined`, which the API rejects. The result was a
+  // `linked_tasks` field documented as "replace" that could never remove
+  // anything. Take whichever end of the record is not the task being updated.
+  const currentLinked = taskData.linked_tasks
+    ?.map((link: any) => (link.task_id === taskData.id ? link.link_id : link.task_id))
+    .filter((id: string | undefined): id is string => Boolean(id)) || [];
 
   // Helper function to make dependency API calls
   async function modifyDependency(
