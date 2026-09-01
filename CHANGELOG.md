@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.3] - 2026-09-01
+
+### Fixed
+- **Task IDs longer than 9 characters were rejected before a request was ever made.** ClickUp lengthened its generated task IDs in August 2026 without announcing it or documenting a format: IDs created up to 5 August are 9 characters (`86eyhry52`), from 12 August 10 characters (`z8nrz7c744`), and by the end of August already 11 (`123yxuagf4a`). Every tool taking a `task_id` - `getTaskById`, `addComment`, `editComment`, `updateTask`, `getTimeEntries`, `createTimeEntry` - failed schema validation with `String must contain at most 9 character(s)`, so a task could be created through the server and then never touched again. The bound is now 6-16 characters everywhere (thanks @zebdro).
+- **Task URLs in comments stopped rendering as live task references for long IDs.** The URL pattern behind the `task_mention` conversion carried its own 6-12 bound, which would silently fall back to a plain link once IDs grew past 12 characters. It now uses the same 6-16 bound as the rest of the validation.
+
+### Notes
+- The upper bound is deliberately kept rather than removed: it is what rejects URLs and `CU-` prefixed strings before they cost an API call. 16 is not a documented ClickUp limit - none exists, the API reference types `task_id` as a plain string - but leaves headroom for a format that grew twice within a month.
+- Widening `isTaskId` slightly increases false positives in `searchTasks`, where an 11-to-16-character alphanumeric search term is now treated as a candidate task ID. The cost is a wasted lookup, not a wrong result.
+
 ## [1.7.2] - 2026-08-17
 
 ### Added
@@ -20,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Images are now read back as markdown.** `getTaskById` used to render an image inside a comment or description as `Image: name - url`, which is not something the write tools understand. It is now `![name](url)`, the same syntax `addComment`/`editComment`/`createTask`/`updateTask` accept. This closes the read-edit round trip: a comment read from a task can be handed back to `editComment` unchanged and keeps its images, because an existing ClickUp attachment URL is re-embedded instead of re-uploaded.
 
 ### Fixed
+- **`createTask` silently dropped its `tags`.** Tags are deliberately kept out of the task request body because ClickUp applies them through dedicated endpoints, and `updateTask` did so via `POST/DELETE /task/{id}/tag/{tagName}` - but `createTask` never followed through, so a create call with `tags` produced an untagged task. The loss was easy to miss because the response echoes the call inputs rather than the stored task, and therefore listed the tags anyway. Tags are now applied right after the task exists, with failures surfaced on the same `tag_warnings:` line `updateTask` already uses (thanks @ThiagoMafra-Integrare).
 - Documented that a broken image reference aborts the write - the README still described the pre-1.7.1 behaviour of writing the comment or task anyway.
 - **Markdown tables in comments were silently swallowed.** ClickUp comments cannot render tables at all (verified empirically - even a hand-crafted table attribute is stored but renders as plain text), and the converter dropped table content entirely: not even the cell text reached the comment. Tables are now re-rendered as column-aligned pipe tables inside a code block, so the information survives and stays readable in monospace. Reading such a comment returns the fenced pipe table, which converts back to the same code block on edit. The `addComment`/`editComment` tool descriptions now state that tables are unsupported and suggest lists instead.
 - **`~~strikethrough~~` lost its formatting.** ClickUp supports a `strike` attribute in comments, but the converter did not map GFM strikethrough to it, keeping only the plain text. Now mapped in both directions: writing `~~text~~` renders struck-through, and reading a struck-through comment returns `~~text~~`.
