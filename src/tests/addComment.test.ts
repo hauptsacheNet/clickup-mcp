@@ -52,6 +52,125 @@ test("addComment posts comment to task", async (t) => {
   t.mock.timers.reset();
 });
 
+test("addComment posts a threaded reply via parent_comment_id", async (t) => {
+  t.mock.timers.enable();
+  process.env.CLICKUP_API_KEY = "test-key";
+  process.env.CLICKUP_TEAM_ID = "team1";
+
+  const { registerTaskToolsWrite } = await import("../tools/task-write-tools");
+
+  const mockAgent = new MockAgent();
+  mockAgent.disableNetConnect();
+  setGlobalDispatcher(mockAgent);
+  const client = mockAgent.get("https://api.clickup.com");
+
+  // addComment validates that the parent is a top-level comment of this task
+  // before posting, so the comment list is fetched first.
+  client
+    .intercept({ path: "/api/v2/task/task123/comment", method: "GET" })
+    .reply(200, {
+      comments: [
+        { id: "c1", date: "1000", comment: [{ text: "Parent" }], user: { id: "u1", username: "me" }, reply_count: 0 },
+      ],
+    });
+
+  let bodyCaptured: any;
+  client
+    .intercept({ path: "/api/v2/comment/c1/reply", method: "POST" })
+    .reply((opts) => {
+      bodyCaptured = JSON.parse(String(opts.body));
+      return { statusCode: 200, data: { id: "r1", user: { username: "me" }, date: "0" } };
+    });
+
+  const tools: Record<string, any> = {};
+  const serverStub = {
+    tool: (
+      name: string,
+      _desc: string,
+      _schema: any,
+      _opts: any,
+      handler: any,
+    ) => {
+      tools[name] = handler;
+    },
+  } as any;
+
+  registerTaskToolsWrite(serverStub, { user: { username: "me", id: "u1" } });
+
+  const result = await tools.addComment({
+    task_id: "task123",
+    comment: "Reply text",
+    parent_comment_id: "c1",
+  });
+
+  // The reply endpoint takes the same rich block body as a top-level comment
+  assert.ok(Array.isArray(bodyCaptured.comment), "comment should be an array of blocks");
+  assert.equal(bodyCaptured.comment[0].text, "Reply text");
+  assert.equal(bodyCaptured.notify_all, true);
+  assert.ok(result.content[0].text.includes("Reply added successfully"));
+  assert.ok(result.content[0].text.includes("parent_comment_id: c1"));
+
+  // Throws if the reply endpoint was not hit (e.g. a top-level comment was posted instead)
+  (mockAgent as any).assertNoPendingInterceptors();
+  await mockAgent.close();
+  t.mock.timers.runAll();
+  t.mock.timers.reset();
+});
+
+test("addComment rejects a parent_comment_id that is not a top-level comment of the task", async (t) => {
+  t.mock.timers.enable();
+  process.env.CLICKUP_API_KEY = "test-key";
+  process.env.CLICKUP_TEAM_ID = "team1";
+
+  const { registerTaskToolsWrite } = await import("../tools/task-write-tools");
+
+  const mockAgent = new MockAgent();
+  mockAgent.disableNetConnect();
+  setGlobalDispatcher(mockAgent);
+  const client = mockAgent.get("https://api.clickup.com");
+
+  // The task's comment list does not contain the requested parent, so the
+  // lookup fails and no POST interceptor exists to be hit.
+  client
+    .intercept({ path: "/api/v2/task/task123/comment", method: "GET" })
+    .reply(200, {
+      comments: [
+        { id: "c1", date: "1000", comment: [{ text: "Parent" }], user: { id: "u1", username: "me" }, reply_count: 0 },
+      ],
+    });
+
+  const tools: Record<string, any> = {};
+  const serverStub = {
+    tool: (
+      name: string,
+      _desc: string,
+      _schema: any,
+      _opts: any,
+      handler: any,
+    ) => {
+      tools[name] = handler;
+    },
+  } as any;
+
+  registerTaskToolsWrite(serverStub, { user: { username: "me", id: "u1" } });
+
+  const result = await tools.addComment({
+    task_id: "task123",
+    comment: "Reply text",
+    parent_comment_id: "other-task-comment",
+  });
+
+  assert.ok(
+    result.content[0].text.includes("not a top-level comment of task task123"),
+    "should explain that the parent does not belong to the task",
+  );
+
+  (mockAgent as any).assertNoPendingInterceptors();
+  await mockAgent.close();
+  t.mock.timers.runAll();
+  t.mock.timers.reset();
+});
+
 test("addComment converts markdown formatting to ClickUp blocks", async (t) => {
   t.mock.timers.enable();
   process.env.CLICKUP_API_KEY = "test-key";
