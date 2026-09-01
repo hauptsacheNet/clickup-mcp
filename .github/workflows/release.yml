@@ -38,3 +38,10 @@ jobs:
           generateReleaseNotes: true
           draft: false
           prerelease: false
+          # The release is sometimes created by hand before this workflow finishes.
+          # Without allowUpdates the action then fails with "already_exists" and the
+          # .mcpb asset is never attached; the omit flags keep manually written
+          # release notes and titles intact when updating.
+          allowUpdates: true
+          omitBodyDuringUpdate: true
+          omitNameDuringUpdate: true

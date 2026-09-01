@@ -5,14 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.8.0] - 2026-09-01
 
 ### Added
+- **`getTaskById` renders task dependencies and linked tasks** ([#31](https://github.com/hauptsacheNet/clickup-mcp/pull/31)). The task payload already carries a flat `dependencies` array covering both directions plus `linked_tasks`, but none of it was rendered - a dependency written via `updateTask` could not be verified through the MCP at all. The metadata block now shows `waiting_on:`, `blocking:` and `linked_tasks:` lines (only when non-empty), with the direction derived from which side of each pair the task sits on.
 - **Threaded comment replies in `getTaskById`** ([#34](https://github.com/hauptsacheNet/clickup-mcp/issues/34)). `GET /task/{id}/comment` only returns top-level comments, so replies inside a thread (Threaded Comments ClickApp) were missing entirely - without any hint that a thread existed. For every comment with `reply_count > 0` the replies are now fetched via `GET /comment/{id}/reply` and rendered nested under their parent comment, oldest first. Comments without a thread cost no extra request; reply fetches are bounded (at most 30 threads per read, 5 requests at a time) to stay within the 100 calls/minute budget, and a thread whose replies could not be loaded says so instead of rendering as threadless.
 - **`addComment` can reply inside a thread.** A new optional `parent_comment_id` parameter posts the comment via `POST /comment/{parent_comment_id}/reply` instead of creating a new top-level comment. The id is validated to be a top-level comment of the given task before anything is uploaded or posted - the reply endpoint anchors the reply to the parent's task, so a mismatched id would otherwise post to the wrong task while images land on `task_id`.
 - `getTaskById` now renders each top-level comment's `comment_id` in its header, so `editComment` and `addComment`'s `parent_comment_id` can actually be used with ids "as returned by getTaskById" - previously the ids were not part of the output at all.
 
 ### Fixed
+- **`updateTask` could never remove a task link** ([#33](https://github.com/hauptsacheNet/clickup-mcp/pull/33)). The `linked_tasks` parameter is documented as replacing the existing links, but the removal half read a non-existent `.id` off the link records (they carry `task_id`/`link_id`, the two ends of the link). Every removal became `DELETE /task/{id}/link/undefined`, surfacing as `Failed to remove link: undefined` in `dependency_warnings` while the link stayed. Links are now identified by whichever end of the record is not the task being updated, so links created from either side are removed correctly. Note: `blocking`/`waiting_on` have a related read bug (`taskData.blocking`/`waiting_on` are never returned by the API) and still cannot remove dependencies - left for a follow-up.
 - **`getTaskById` silently truncated comment histories to the 25 newest comments.** The `?start_date=0` parameter it passed is ignored by ClickUp (there is no such parameter). Comments are now paged with `start`/`start_id` like `editComment` already did, up to 10 pages (250 comments); hitting that cap is logged instead of staying silent.
 
 ## [1.7.3] - 2026-09-01
