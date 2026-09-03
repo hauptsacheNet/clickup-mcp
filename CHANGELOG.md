@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Comments written via `addComment`/`editComment` lost their paragraph breaks.** ClickUp has no paragraph margins: the UI stores a paragraph break as an extra empty `\n` fragment (what pressing Enter twice produces), but the markdown converter emitted only a single `\n` between paragraphs, so consecutive paragraphs rendered as one block of lines and a paragraph following a list was glued to the last bullet. `convertMarkdownToClickUpBlocks` now inserts an empty line between adjacent flow blocks (paragraph/list). Headings, code blocks and blockquotes bring their own spacing in ClickUp and get no extra blank line, so they do not double up. Hard line breaks (`  \n`) still map to a single newline.
+
 ## [1.8.0] - 2026-09-01
 
 ### Added

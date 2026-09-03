@@ -787,6 +787,15 @@ function walkMdastNodes(
     const node = nodes[i];
     const currentAttrs = { ...inheritedAttrs };
 
+    // ClickUp has no paragraph margins: two paragraphs separated by a single '\n'
+    // render as consecutive lines. The UI stores a paragraph break as an extra
+    // empty '\n' fragment (what a user gets by pressing Enter twice), so emit one
+    // between adjacent flow blocks. Headings, code blocks and blockquotes bring
+    // their own spacing - a blank line next to them would double the gap.
+    if (i > 0 && needsBlankLineBetween(nodes[i - 1], node)) {
+      blocks.push({ text: '\n', attributes: {} });
+    }
+
     switch (node.type) {
       case 'heading':
         // Process heading content with inline formatting
@@ -891,6 +900,16 @@ function walkMdastNodes(
         break;
     }
   }
+}
+
+/**
+ * Block types that render without their own vertical margin in ClickUp comments.
+ * Two of them in a row need an explicit empty line to read as separate blocks.
+ */
+const FLOW_BLOCK_TYPES = new Set<string>(['paragraph', 'list']);
+
+function needsBlankLineBetween(prev: Content, next: Content): boolean {
+  return FLOW_BLOCK_TYPES.has(prev.type) && FLOW_BLOCK_TYPES.has(next.type);
 }
 
 /**
