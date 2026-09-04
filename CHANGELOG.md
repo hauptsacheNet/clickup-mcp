@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`updateTask` can replace a task description.** The new `description` parameter overwrites the whole description, like `updateDocumentPage` does for doc pages; `append_description` keeps adding a dated `**Edit (YYYY-MM-DD):**` section below the existing text. Passing both is rejected before anything is touched. Rewriting a description (restructuring, shortening, removing an obsolete point) previously produced a duplicate below the old text, and the only way out was a different MCP server. ClickUp now keeps a [task description history](https://help.clickup.com/hc/en-us/articles/6309673287575-Task-description-history) on every plan, so a bad replacement can be restored in the UI (verified: each replacement shows up as its own version with a diff view, but edits by the same user within the same minute are merged into one version) - the tool description tells the model to read the current text first and carry over what is still needed. Images in a replacing description go through the same upload pipeline as before. The response says whether the description was replaced (with old/new length) or appended.
+
 ### Fixed
 - **Comments written via `addComment`/`editComment` lost their paragraph breaks.** ClickUp has no paragraph margins: the UI stores a paragraph break as an extra empty `\n` fragment (what pressing Enter twice produces), but the markdown converter emitted only a single `\n` between paragraphs, so consecutive paragraphs rendered as one block of lines and a paragraph following a list was glued to the last bullet. `convertMarkdownToClickUpBlocks` now inserts an empty line between adjacent flow blocks (paragraph/list). Headings, code blocks and blockquotes bring their own spacing in ClickUp and get no extra blank line, so they do not double up. Hard line breaks (`  \n`) still map to a single newline.
 
