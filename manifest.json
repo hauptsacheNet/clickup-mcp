@@ -44,7 +44,7 @@
     },
     {
       "name": "updateTask",
-      "description": "Update various aspects of an existing task including name, description (append-only), status, priority, dates, tags, assignees, and parent relationships. Images in the appended description are uploaded and embedded automatically."
+      "description": "Update various aspects of an existing task including name, description (append a dated section or replace the whole text), status, priority, dates, tags, assignees, and parent relationships. Images in the description are uploaded and embedded automatically."
     },
     {
       "name": "createTask",

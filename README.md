@@ -189,7 +189,7 @@ The ClickUp MCP supports three operational modes to balance functionality, secur
 | `getTaskById`          |      ✅       |  ✅   |   ✅   | Get complete task details including comments (with threaded replies), images, and metadata |
 | `addComment`           |      ❌       |  ❌   |   ✅   | Add comments to tasks, or reply inside a comment thread via `parent_comment_id`         |
 | `editComment`          |      ❌       |  ❌   |   ✅   | Correct your own comment within 24h instead of posting a follow-up                      |
-| `updateTask`           |      ❌       |  ❌   |   ✅   | Update tasks (status, priority, assignees, etc.) with **SAFE APPEND-ONLY** descriptions |
+| `updateTask`           |      ❌       |  ❌   |   ✅   | Update tasks (status, priority, assignees, etc.); descriptions can be appended to or replaced entirely |
 | `createTask`           |      ❌       |  ❌   |   ✅   | Create new tasks with full markdown support                                             |
 | `searchTasks`          |      ✅       |  ✅   |   ✅   | Find tasks by content, keywords, assignees, or project context                          |
 | `searchSpaces`         |      ❌       |  ✅   |   ✅   | Browse workspace structure, project organization, and documents                         |
