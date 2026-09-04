@@ -186,3 +186,34 @@ test("convertMarkdownToClickUpBlocks renders tables as aligned code blocks", () 
   assert.ok(blocks.some(b => b.text === 'Before the table.'), "text before table survives");
   assert.ok(blocks.some(b => b.text === 'After the table.'), "text after table survives");
 });
+
+test("convertMarkdownToClickUpBlocks separates paragraphs with an empty line", () => {
+  // ClickUp has no paragraph margins - the UI stores a paragraph break as an
+  // extra empty '\n' fragment. A single '\n' renders both paragraphs as one block.
+  const blocks = convertMarkdownToClickUpBlocks("First paragraph.\n\nSecond paragraph.");
+  const texts = blocks.map(b => b.text);
+  assert.deepEqual(texts, ["First paragraph.", "\n", "\n", "Second paragraph."]);
+});
+
+test("convertMarkdownToClickUpBlocks keeps a hard line break as a single newline", () => {
+  const blocks = convertMarkdownToClickUpBlocks("Line one  \nLine two");
+  const texts = blocks.map(b => b.text);
+  assert.deepEqual(texts, ["Line one", "\n", "Line two"]);
+});
+
+test("convertMarkdownToClickUpBlocks puts an empty line between a list and a paragraph", () => {
+  const blocks = convertMarkdownToClickUpBlocks("Intro.\n\n- item\n\nOutro.");
+  const texts = blocks.map(b => b.text);
+  assert.deepEqual(texts, ["Intro.", "\n", "\n", "item", "\n", "\n", "Outro."]);
+  // the list marker must stay on the list line, the blank line is plain
+  assert.deepEqual(blocks[4].attributes, { list: { list: "bullet" } });
+  assert.deepEqual(blocks[5].attributes, {});
+});
+
+test("convertMarkdownToClickUpBlocks adds no empty line around headings, code blocks and quotes", () => {
+  const markdown = "Para.\n\n## Title\n\nPara.\n\n```\ncode\n```\n\nPara.\n\n> quote\n\nPara.";
+  const blocks = convertMarkdownToClickUpBlocks(markdown);
+  const plainNewlines = blocks.filter(b => b.text === "\n" && Object.keys(b.attributes ?? {}).length === 0);
+  // one plain newline terminating each non-final paragraph, none as extra blank lines
+  assert.equal(plainNewlines.length, 3);
+});
