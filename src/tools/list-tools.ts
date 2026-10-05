@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { CONFIG } from "../shared/config";
 import { generateListUrl, generateSpaceUrl } from "../shared/utils";
+import { describeCustomFields, getListCustomFields } from "../shared/custom-fields";
 
 export function registerListToolsRead(server: McpServer) {
   server.tool(
@@ -111,6 +112,46 @@ export function registerListToolsRead(server: McpServer) {
             {
               type: "text",
               text: `Error getting list info: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            },
+          ],
+        };
+      }
+    }
+  );
+
+  server.tool(
+    "getListCustomFields",
+    [
+      "Lists the custom fields defined on a list, with their ids, types and valid options.",
+      "ALWAYS call this before createTask/updateTask with `custom_fields`, so you know the exact field names and option names to use.",
+      "Field references are matched by NAME first: emoji, case, accents and extra spaces are ignored, and a unique PARTIAL name also matches (e.g. `domain` resolves `🧩 Domain`). Pass the exact field `id` when a name is ambiguous.",
+      "Values passed to createTask/updateTask accept the option/user NAME (matched the same way) or the raw id.",
+      "Types: drop_down/labels take an option name or id; users take a user id, email or exact username (or `{add, rem}` to revoke); checkbox true/false; date an ISO string or epoch ms; number a number; short_text/text a string."
+    ].join("\n"),
+    {
+      list_id: z.string().min(1).describe("The list ID to list custom fields for")
+    },
+    {
+      readOnlyHint: true
+    },
+    async ({ list_id }) => {
+      try {
+        const fields = await getListCustomFields(list_id);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: describeCustomFields(list_id, fields)
+            }
+          ],
+        };
+      } catch (error) {
+        console.error('Error getting custom fields:', error);
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Error getting custom fields: ${error instanceof Error ? error.message : 'Unknown error'}`,
             },
           ],
         };

@@ -44,11 +44,11 @@
     },
     {
       "name": "updateTask",
-      "description": "Update various aspects of an existing task including name, description (append a dated section or replace the whole text), status, priority, dates, tags, assignees, and parent relationships. Images in the description are uploaded and embedded automatically."
+      "description": "Update various aspects of an existing task including name, description (append a dated section or replace the whole text), status, priority, dates, tags, assignees, and parent relationships. Images in the description are uploaded and embedded automatically. Custom fields can be set by name or id - run getListCustomFields first."
     },
     {
       "name": "createTask",
-      "description": "Create a new task in a specific list with full markdown support, assignment to users, and automatic linking to related tasks. Images in the description are uploaded and embedded automatically."
+      "description": "Create a new task in a specific list with full markdown support, assignment to users, and automatic linking to related tasks. Images in the description are uploaded and embedded automatically. Custom fields can be set by name or id - run getListCustomFields first."
     },
     {
       "name": "searchTasks",
@@ -61,6 +61,10 @@
     {
       "name": "getListInfo",
       "description": "Get comprehensive information about a list including description, available statuses, space tags, and project context for task creation."
+    },
+    {
+      "name": "getListCustomFields",
+      "description": "List a list's custom fields (ids, types, options, writable or read-only). Run this before createTask/updateTask with custom_fields so you know the exact field and option names to use."
     },
     {
       "name": "updateListInfo",

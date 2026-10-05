@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Custom fields can now be read and written through the MCP.** A new `getListCustomFields` tool lists a list's custom fields with their ids, types, valid options and whether they are writable (ClickUp-computed `automatic_progress`/`formula`/`rollup` fields and `attachment` fields are flagged as read-only/unsupported). `createTask` and `updateTask` accept an optional `custom_fields: [{ name, value }]` array. Field references are matched by name first (emoji, case, accents and extra spaces are ignored, letters and digits from any script are kept, and a unique partial name also matches, e.g. `domain` resolves `🧩 Domain`), falling back to the exact field id. Values are resolved per type: `drop_down`/`labels` take an option name or id, `users` take a user id, email or exact username (or an `{ add, rem }` diff), `checkbox` takes true/false, `date` takes an ISO string or epoch ms, `number`/`currency`/`rating` take a number, `tasks` take task ids (or an `{ add, rem }` diff), and text types take a string. For `null`, `drop_down`, `date`, `number`/`currency`/`rating`/`manual_progress` and text fields resolve to `null`; `labels` resolves to `[]`; `checkbox` resolves to `false`; `users` and `tasks` reject `null` (use an `{ add, rem }` diff to remove values). On create the resolved fields travel in the task body; on update each field is written through `POST /task/{id}/field/{field_id}` so a single failure does not roll back the others. All fields are resolved before anything is written, so an unknown field or option aborts with the task untouched.
+- `getTaskById` now renders `users` and `labels` custom fields by name (previously users printed as `[object Object]`) and `date` fields as an ISO timestamp instead of the raw epoch value.
+
 ## [1.9.0] - 2026-09-04
 
 ### Added

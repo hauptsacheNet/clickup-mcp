@@ -6,6 +6,7 @@ import { CONFIG } from "../shared/config";
 import { isTaskId, getSpaceDetails, getAllTeamMembers } from "../shared/utils";
 import { downloadImages } from "../shared/image-processing";
 import { ExistingComment, fetchAllTopLevelComments, fetchRepliesByComment } from "../shared/comments";
+import { formatCustomFieldReadValue } from "../shared/custom-fields";
 
 // Read-specific utility functions
 
@@ -424,23 +425,9 @@ export async function generateTaskMetadata(task: any, timeEntries?: any[], isDet
   // Add custom fields if they exist
   if (task.custom_fields && task.custom_fields.length > 0) {
     task.custom_fields.forEach((field: any) => {
-      if (field.value !== undefined && field.value !== null && field.value !== '') {
+      const fieldValue = formatCustomFieldReadValue(field);
+      if (fieldValue !== null) {
         const fieldName = field.name.toLowerCase().replace(/\s+/g, '_');
-        let fieldValue = field.value;
-
-        // Handle different custom field types
-        if (field.type === 'drop_down' && typeof field.value === 'number') {
-          // For dropdown fields, find the selected option
-          const selectedOption = field.type_config?.options?.find((opt: any) => opt.orderindex === field.value);
-          fieldValue = selectedOption?.name || field.value;
-        } else if (Array.isArray(field.value)) {
-          // For multi-select or array values
-          fieldValue = field.value.map((v: any) => v.name || v).join(', ');
-        } else if (typeof field.value === 'object') {
-          // For object values (like users), extract meaningful data
-          fieldValue = field.value.username || field.value.name || JSON.stringify(field.value);
-        }
-
         metadataLines.push(`custom_${fieldName}: ${fieldValue}`);
       }
     });

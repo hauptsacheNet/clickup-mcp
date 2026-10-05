@@ -22,6 +22,14 @@ import {
   fetchCommentPage,
   findTopLevelComment,
 } from "../shared/comments";
+import {
+  CustomFieldInput,
+  ResolvedCustomField,
+  buildCreateCustomFieldsBody,
+  formatResolvedCustomFields,
+  resolveCustomFields,
+  writeCustomFieldsToTask,
+} from "../shared/custom-fields";
 
 /**
  * Shared wording for the image support of every markdown field in this file.
@@ -147,6 +155,41 @@ const taskDueDateSchema = z.string().optional().describe("Optional due date as I
 const taskStartDateSchema = z.string().optional().describe("Optional start date as ISO date string (e.g., '2024-10-06T09:00:00+02:00')");
 const taskTimeEstimateSchema = z.number().optional().describe("Optional time estimate in hours (will be converted to milliseconds)");
 const taskTagsSchema = z.array(z.string()).optional().describe("Optional array of tag names");
+// Custom field values: a scalar, a boolean (checkbox), a list (labels/users/tasks),
+// or null to clear a field. Names are resolved per type by ../shared/custom-fields.
+const customFieldValueSchema = z.union([
+  z.string(),
+  z.number(),
+  z.boolean(),
+  z.null(),
+  z.array(z.union([z.string(), z.number()])),
+  z
+    .object({
+      add: z.array(z.union([z.string(), z.number()])).optional(),
+      rem: z.array(z.union([z.string(), z.number()])).optional(),
+    })
+    .describe("Users/tasks field diff: `add` grants, `rem` revokes (assignees-style)."),
+]);
+const customFieldsSchema = z
+  .array(
+    z.object({
+      name: z
+        .string()
+        .optional()
+        .describe("Field name as shown in ClickUp, e.g. '🤝 Customer' or 'Domain'. Emoji and case are ignored; a unique partial name also matches."),
+      id: z
+        .string()
+        .optional()
+        .describe("Exact custom field id, used when a name is ambiguous. Takes precedence over `name`."),
+      value: customFieldValueSchema.describe(
+        "Value to set. drop_down: option name or id. labels: option name/id or array. users: user id, email or exact username (or `{add:[...],rem:[...]}` to change members). tasks: task id or array of ids (or `{add:[...],rem:[...]}` to change links; null cannot clear it). checkbox: true/false. date: ISO string or epoch ms. number: number. text: string. null clears the field (for users/tasks, pass `{add,rem}` instead)."
+      ),
+    })
+  )
+  .optional()
+  .describe(
+    "Optional custom fields to set on the task. Run getListCustomFields on the list first to see available field names and options. Each entry targets one field by `name` (preferred) or `id`."
+  );
 
 export function registerTaskToolsWrite(server: McpServer, userData: any) {
   server.tool(
@@ -415,7 +458,8 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
       assignees: z.array(z.string()).optional().describe(createAssigneeDescription(userData)),
       waiting_on: z.array(z.string()).optional().describe("Optional array of task IDs that this task should wait on (will replace existing waiting_on relationships)"),
       blocking: z.array(z.string()).optional().describe("Optional array of task IDs that this task should block. Note: This creates dependencies FROM those tasks TO this task (those tasks will wait on this one)"),
-      linked_tasks: z.array(z.string()).optional().describe("Optional array of task IDs to link as related tasks without blocking (will replace existing linked tasks)")
+      linked_tasks: z.array(z.string()).optional().describe("Optional array of task IDs to link as related tasks without blocking (will replace existing linked tasks)"),
+      custom_fields: customFieldsSchema
     },
     {
       readOnlyHint: false,
@@ -423,7 +467,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
       idempotentHint: false,
       openWorldHint: true
     },
-    async ({ task_id, name, description, append_description, status, priority, due_date, start_date, time_estimate, tags, parent_task_id, assignees, blocking, waiting_on, linked_tasks }) => {
+    async ({ task_id, name, description, append_description, status, priority, due_date, start_date, time_estimate, tags, parent_task_id, assignees, blocking, waiting_on, linked_tasks, custom_fields }) => {
       try {
         if (description !== undefined && append_description !== undefined) {
           return {
@@ -446,6 +490,12 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
         }
 
         const taskData = await taskResponse.json();
+
+        // Resolve custom fields BEFORE any mutation: an unknown field name or
+        // option must abort the whole call with nothing written, and the list
+        // that owns the field definitions is the one the task currently lives in.
+        const resolvedCustomFields: ResolvedCustomField[] =
+          custom_fields !== undefined ? await resolveCustomFields(taskData.list?.id, custom_fields) : [];
 
         // Resolve and upload description images FIRST - an image problem must
         // abort before dependencies, tags or the task itself are touched, so the
@@ -528,6 +578,17 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
           }
         }
 
+        // Custom fields are written through their dedicated field endpoints, one
+        // call per field rather than the task PUT body, so a single failure does
+        // not roll back the others - the same approach as tags and dependencies.
+        let customFieldWritten: ResolvedCustomField[] = [];
+        let customFieldWarnings: string[] = [];
+        if (resolvedCustomFields.length > 0) {
+          const result = await writeCustomFieldsToTask(task_id, resolvedCustomFields);
+          customFieldWritten = result.written;
+          customFieldWarnings = result.warnings;
+        }
+
         // Build the description to write: a full replacement, or the existing
         // text plus a dated append section.
         let finalDescription: string | undefined;
@@ -555,8 +616,9 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
           updateBody.assignees = { add: assignees, rem: [] }; // Add new assignees, remove none
         }
 
-        // Check if there's anything to update (including tags and dependencies which were handled separately)
-        if (Object.keys(updateBody).length === 0 && tags === undefined && blocking === undefined && waiting_on === undefined && linked_tasks === undefined) {
+        // Check if there's anything to update (including tags, dependencies and
+        // custom fields which are handled separately)
+        if (Object.keys(updateBody).length === 0 && tags === undefined && blocking === undefined && waiting_on === undefined && linked_tasks === undefined && custom_fields === undefined) {
           return {
             content: [
               {
@@ -587,19 +649,33 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
           updatedTask = await updateResponse.json();
         }
 
-        // If only tags or dependencies were updated, fetch the task again to get the updated state
-        if ((tags !== undefined || blocking !== undefined || waiting_on !== undefined || linked_tasks !== undefined) && Object.keys(updateBody).length === 0) {
-          const refreshResponse = await fetch(`https://api.clickup.com/api/v2/task/${task_id}`, {
-            headers: { Authorization: CONFIG.apiKey },
-          });
-          if (refreshResponse.ok) {
-            updatedTask = await refreshResponse.json();
+        // If only tags, dependencies or custom fields were updated, fetch the task
+        // again to get the updated state. A refresh failure must not be reported
+        // as a failed update: the writes already happened, so keep the result and
+        // surface the refresh problem as a warning instead.
+        let refreshWarning: string | undefined;
+        if ((tags !== undefined || blocking !== undefined || waiting_on !== undefined || linked_tasks !== undefined || custom_fields !== undefined) && Object.keys(updateBody).length === 0) {
+          try {
+            const refreshResponse = await fetch(`https://api.clickup.com/api/v2/task/${task_id}`, {
+              headers: { Authorization: CONFIG.apiKey },
+            });
+            if (refreshResponse.ok) {
+              updatedTask = await refreshResponse.json();
+            } else {
+              refreshWarning = `Failed to refresh task: ${refreshResponse.status} ${refreshResponse.statusText}`;
+            }
+          } catch (error) {
+            refreshWarning = `Error refreshing task: ${error instanceof Error ? error.message : String(error)}`;
           }
         }
 
         const responseLines = formatTaskResponse(updatedTask, 'updated', {
           name, description, append_description, status, priority, due_date, start_date, time_estimate, tags, parent_task_id, assignees, blocking, waiting_on, linked_tasks
         }, userData);
+
+        if (refreshWarning) {
+          responseLines.push(`refresh_warnings: ${refreshWarning}`);
+        }
 
         if (description !== undefined) {
           const previousLength = (taskData.markdown_description || "").length;
@@ -616,6 +692,15 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
         // Add tag update results if any
         if (tagUpdateResults.length > 0) {
           responseLines.push('tag_warnings: ' + tagUpdateResults.join('; '));
+        }
+
+        // Report custom fields actually written, then any that failed
+        if (customFieldWritten.length > 0) {
+          responseLines.push('custom_fields:');
+          responseLines.push(...formatResolvedCustomFields(customFieldWritten));
+        }
+        if (customFieldWarnings.length > 0) {
+          responseLines.push('custom_field_warnings: ' + customFieldWarnings.join('; '));
         }
 
         responseLines.push(...formatAttachedImages(uploadedImages));
@@ -677,7 +762,8 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
       time_estimate: taskTimeEstimateSchema,
       tags: taskTagsSchema,
       parent_task_id: z.string().optional().describe("Optional parent task ID to create this as a subtask"),
-      assignees: z.array(z.string()).optional().describe(createAssigneeDescription(userData))
+      assignees: z.array(z.string()).optional().describe(createAssigneeDescription(userData)),
+      custom_fields: customFieldsSchema
     },
     {
       readOnlyHint: false,
@@ -685,7 +771,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
       idempotentHint: false,
       openWorldHint: true
     },
-    async ({ list_id, name, description, status, priority, due_date, start_date, time_estimate, tags, parent_task_id, assignees }) => {
+    async ({ list_id, name, description, status, priority, due_date, start_date, time_estimate, tags, parent_task_id, assignees, custom_fields }) => {
       try {
         // Resolve description images BEFORE creating the task: a broken reference
         // (missing file, dead URL, non-image) must not leave a half-finished task
@@ -695,6 +781,10 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
           description,
           "the task was NOT created"
         );
+
+        // Resolve custom fields before creating anything: an unknown field or
+        // option must abort with no task left behind.
+        const resolvedCustomFields: ResolvedCustomField[] = await resolveCustomFields(list_id, custom_fields);
 
         const userData = await getCurrentUser();
         const currentUserId = userData.user.id;
@@ -706,6 +796,12 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
         // Add markdown description if provided
         if (description) {
           requestBody.markdown_description = description;
+        }
+
+        // ClickUp accepts custom fields directly in the create body, resolved to
+        // their API-ready values (drop_down -> option id, users -> user ids, ...).
+        if (resolvedCustomFields.length > 0) {
+          requestBody.custom_fields = buildCreateCustomFieldsBody(resolvedCustomFields);
         }
 
         const response = await fetch(`https://api.clickup.com/api/v2/list/${list_id}/task`, {
@@ -793,6 +889,10 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
         responseLines.push(...imageWarnings);
         if (tagCreateResults.length > 0) {
           responseLines.push('tag_warnings: ' + tagCreateResults.join('; '));
+        }
+        if (resolvedCustomFields.length > 0) {
+          responseLines.push('custom_fields:');
+          responseLines.push(...formatResolvedCustomFields(resolvedCustomFields));
         }
 
         return {
