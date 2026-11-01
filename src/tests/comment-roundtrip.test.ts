@@ -170,3 +170,101 @@ test("paragraph breaks survive the full read/write round trip", async () => {
   //    fed through getTaskById -> editComment neither gains nor loses blank lines
   assert.deepEqual(convertMarkdownToClickUpBlocks(text), written);
 });
+
+test("a file card read back as markdown stays a file card when passed to editComment", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  process.env.CLICKUP_API_KEY = "test-key";
+  process.env.CLICKUP_TEAM_ID = "team1";
+
+  const fileUrl =
+    "https://t123.p.clickup-attachments.com/t123/1ad2d9c4/formsave(129).csv";
+
+  // 1. Read: shape of a CSV attached to a comment in the ClickUp UI (trimmed)
+  const blocks = await convertClickUpTextItemsToToolCallResult([
+    { text: "Export:", attributes: {} },
+    { text: "\n", attributes: { "block-id": "block-1" } },
+    {
+      type: "attachment",
+      text: "formsave(129).csv",
+      attachment: {
+        id: "1ad2d9c4.csv",
+        title: "formsave(129).csv",
+        extension: "csv",
+        url: fileUrl,
+      },
+    },
+    { text: "\n", attributes: { "block-id": "block-2" } },
+  ] as any);
+
+  const readBack = blocks
+    .filter((b: any) => b.type === "text")
+    .map((b: any) => b.text)
+    .join("\n");
+
+  assert.ok(
+    readBack.includes(`![formsave(129).csv](<${fileUrl}>)`),
+    `the file must be readable as markdown, got: ${readBack}`
+  );
+
+  // 2. Write: hand exactly that text back to editComment
+  const { registerTaskToolsWrite } = await import("../tools/task-write-tools");
+
+  const mockAgent = new MockAgent();
+  mockAgent.disableNetConnect();
+  setGlobalDispatcher(mockAgent);
+  const client = mockAgent.get("https://api.clickup.com");
+
+  client
+    .intercept({ path: "/api/v2/task/task123/comment", method: "GET" })
+    .reply(200, {
+      comments: [
+        {
+          id: "c1",
+          date: String(Date.now() - 60 * 1000),
+          comment_text: "Export:",
+          user: { id: 42, username: "me" },
+        },
+      ],
+    });
+  client
+    .intercept({ path: "/api/v2/user", method: "GET" })
+    .reply(200, { user: { id: 42, username: "me" } });
+
+  // No attachment upload is intercepted: re-uploading the file would fail this test
+  let bodyCaptured: any;
+  client
+    .intercept({ path: "/api/v2/comment/c1", method: "PUT" })
+    .reply((opts) => {
+      bodyCaptured = JSON.parse(String(opts.body));
+      return { statusCode: 200, data: {} };
+    });
+
+  const tools: Record<string, any> = {};
+  const serverStub = {
+    tool: (name: string, _d: any, _s: any, _o: any, handler: any) => {
+      tools[name] = handler;
+    },
+  } as any;
+  registerTaskToolsWrite(serverStub, { user: { username: "me", id: 42 } });
+
+  const result = await tools.editComment({
+    task_id: "task123",
+    comment_id: "c1",
+    comment: readBack,
+  });
+
+  assert.ok(
+    result.content[0].text.includes("Comment edited successfully"),
+    result.content[0].text
+  );
+
+  assert.ok(!bodyCaptured.comment.some((b: any) => b.type === "image"), "a CSV is no image");
+  const fileFragment = bodyCaptured.comment.find((b: any) => b.type === "attachment");
+  assert.ok(fileFragment, "the edited comment must still contain the file card");
+  assert.equal(fileFragment.attachment.url, fileUrl, "same attachment, not a new upload");
+  assert.equal(fileFragment.text, "formsave(129).csv", "the displayed filename survives");
+
+  await mockAgent.close();
+  t.mock.timers.runAll();
+  t.mock.timers.reset();
+});

@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Comments and descriptions can attach any file, not just images.** Excel and CSV exports are the main use case: ClickUp comments cannot render tables, and ClickUp previews Excel/Word/PowerPoint attachments in the browser when the workspace enables the [Preview Word, Excel, and Powerpoint files](https://help.clickup.com/hc/en-us/articles/37682636758551-Activate-the-Preview-Word-Excel-and-Powerpoint-files-in-ClickUp-ClickApp) ClickApp. The existing embed syntax is reused - `![Auswertung März](/path/to/export.xlsx)` - and accepts the same sources as images (local paths, `data:` URIs, http(s) URLs, existing ClickUp attachment URLs). In comments a non-image file becomes a `type: "attachment"` fragment carrying the full upload response, which renders as the same file card the ClickUp UI creates; in task descriptions it becomes a plain markdown link, since an image tag pointing at a spreadsheet renders as a broken image. Uploads carry the proper content type (e.g. `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`) and keep the source's extension when the caption is used as filename. The tool descriptions of `addComment`, `editComment`, `createTask` and `updateTask` explain this, and point at attaching a spreadsheet instead of pasting a large table.
+- **File cards survive a read/edit round trip.** `getTaskById` previously printed only the filename of a file attached to a comment (and dropped the URL); it now renders the card as `![name](url)`, so passing a comment back to `editComment` re-embeds the same attachment without re-uploading it.
+
+### Changed
+- **Local files that look like credentials are refused.** With any file type allowed, the path in the markdown is all that keeps a private key out of a ticket, so dotfiles (`.env`, `.npmrc`, `.netrc`, ...), key material (`id_rsa`, `*.pem`, `*.key`, `*.p12`, ...) and files under `.ssh`, `.aws`, `.gnupg`, `.kube`, `.docker` or `.azure` abort the write with an explanation. A downloaded URL that returns `text/html` (a dead or login-protected link) is rejected rather than attached as a useless HTML file.
+- A `.png`/`.jpg`/`.gif`/`.webp` whose content is not a real image is still rejected - it is not silently attached as a file.
+- The write responses report `files_attached` instead of `images_attached`.
+
 ## [1.9.0] - 2026-09-04
 
 ### Added

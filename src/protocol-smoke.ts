@@ -7,7 +7,10 @@
  * server as a subprocess and talks JSON-RPC to it the way a client would.
  *
  *   npm run build && npm run smoke                        # list tools only
- *   npm run build && npm run smoke -- <task_id> <image>   # also post a comment
+ *   npm run build && npm run smoke -- <task_id> <file>    # also post a comment
+ *
+ * <file> may be an image (rendered inline) or any other file such as an .xlsx
+ * (rendered as a file card).
  *
  * With a task_id it WRITES a real comment, so point it at a scratch task.
  */
@@ -15,7 +18,7 @@ import "dotenv/config";
 import { spawn } from "child_process";
 import { resolve } from "path";
 
-const [taskId, imagePath] = process.argv.slice(2);
+const [taskId, filePath] = process.argv.slice(2);
 
 const child = spawn("node", [resolve(__dirname, "../dist/index.js")], {
   stdio: ["pipe", "pipe", "pipe"],
@@ -104,13 +107,15 @@ async function main() {
     const tool = tools.find((t: any) => t.name === name);
     check(`${name} documents image support`,
       /local file path/i.test(tool?.description || ""));
+    check(`${name} documents file support`,
+      /\.xlsx/i.test(tool?.description || ""));
   }
 
-  if (taskId && imagePath) {
+  if (taskId && filePath) {
     const comment = [
       "**Protokoll-Smoke-Test** - dieser Kommentar kam über MCP/stdio.",
       "",
-      `![Bild aus dem Smoke-Test](${resolve(imagePath)})`,
+      `![Anhang aus dem Smoke-Test](${resolve(filePath)})`,
     ].join("\n");
 
     const call = await rpc("tools/call", {
@@ -120,11 +125,12 @@ async function main() {
     const text: string = call.result?.content?.[0]?.text || "";
     check("tools/call addComment", /Comment added successfully/.test(text),
       call.error ? JSON.stringify(call.error) : "");
-    check("image was attached", /images_attached: 1/.test(text),
+    check("file was attached", /files_attached: 1/.test(text),
       (text.match(/WARNING.*/) || [""])[0]);
   } else {
-    console.log("\nSkipped the write test. Pass a task id and image to run it:");
+    console.log("\nSkipped the write test. Pass a task id and an image or file to run it:");
     console.log("  npm run smoke -- <task_id> ./screenshot.png");
+    console.log("  npm run smoke -- <task_id> ./export.xlsx");
   }
 
   child.kill();
