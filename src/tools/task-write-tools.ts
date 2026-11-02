@@ -41,7 +41,7 @@ const ATTACHMENT_SUPPORT_HINT = [
   "FILES: Any other file is attached with the same syntax - `![Export March](/absolute/path/to/export.xlsx)`. Images render inline; other files become a file card in comments and a link in descriptions.",
   "SPREADSHEETS: Excel (.xlsx/.xls) and CSV files are the main use case - ClickUp can preview Excel, Word and PowerPoint attachments directly in the browser (when the workspace enables the 'Preview Word, Excel, and Powerpoint files' ClickApp), so attach a spreadsheet instead of pasting large tables.",
   "This server runs locally, so a local file path is read and uploaded automatically - never inline a file as base64 when a path exists, it costs orders of magnitude more tokens.",
-  "Also accepted: `data:` URIs, http(s) URLs (downloaded and re-uploaded), and existing ClickUp attachment URLs (embedded as-is).",
+  "Also accepted: `data:` URIs, http(s) URLs (downloaded and re-uploaded - images only; other files must come from a local path or data URI), and existing ClickUp attachment URLs (embedded as-is).",
   "The caption becomes the attachment filename (the original extension is kept), which is what ClickUp displays beneath the image or on the file card - so write a caption that reads well.",
   "Credential files (dotfiles such as .env, private keys, ~/.ssh, ~/.aws) are refused.",
 ].join("\n");

@@ -1,7 +1,7 @@
 import { Buffer } from "buffer";
 import { randomUUID } from "crypto";
 import { readFile } from "fs/promises";
-import { basename, extname, isAbsolute, resolve, sep } from "path";
+import { basename, extname, isAbsolute, resolve } from "path";
 import { IMAGE_EXTENSIONS } from "../clickup-text";
 import { CONFIG } from "./config";
 import { parseDataUri } from "./data-uri";
@@ -141,7 +141,9 @@ const SECRET_FILENAME = /^id_(rsa|dsa|ecdsa|ed25519)$/;
  */
 function assertNotSecretFile(filePath: string): void {
   const name = basename(filePath);
-  const segments = filePath.split(sep);
+  // resolve() normalises separators, so C:/Users/me/.ssh/config is split into
+  // its directories on Windows too
+  const segments = resolve(filePath).split(/[\\/]/);
   if (
     name.startsWith(".") ||
     SECRET_FILENAME.test(name) ||
@@ -183,7 +185,7 @@ export function isClickUpAttachmentUrl(url: string): boolean {
  * Supported sources, in this order:
  * - a ClickUp attachment URL      -> reused as-is, no upload
  * - a base64 data URI             -> decoded
- * - any other http(s) URL         -> downloaded
+ * - any other http(s) URL         -> downloaded, images only
  * - anything else                 -> read from the local filesystem
  *
  * The local path case is the interesting one: this server runs next to the agent,
@@ -220,15 +222,16 @@ export async function resolveAttachmentSource(
     const bytes = Buffer.from(await response.arrayBuffer());
     assertWithinSizeLimit(bytes.byteLength, src);
     const urlName = decodeFilePath(basename(new URL(src).pathname));
-    const headerType = response.headers.get("content-type")?.split(";")[0].trim().toLowerCase();
-    // A URL that answers with a web page is a dead or login-protected link, not a
-    // file - attaching the HTML would put a useless "download.html" into the ticket.
-    if (headerType === "text/html" && !["html", "htm"].includes(extensionOf(urlName))) {
-      throw new Error(`${src} returned a web page (text/html), not a file`);
+    const { mimeType, isImage } = classifyFile(bytes, urlName, src);
+    // Only images may come from a URL: any other body could be the response of an
+    // internal service (localhost, cloud metadata endpoint) that a prompt injection
+    // points at, and it would end up readable in the ticket.
+    if (!isImage) {
+      throw new Error(
+        `${src} is not an image - files other than images can only be attached from a local path or data URI`
+      );
     }
-    const { mimeType, isImage } = classifyFile(bytes, urlName, src, headerType);
-    const suggestedName = withExtension(urlName || (isImage ? "image" : "file"), mimeType);
-    return { kind: "bytes", bytes, mimeType, suggestedName };
+    return { kind: "bytes", bytes, mimeType, suggestedName: withExtension(urlName || "image", mimeType, true) };
   }
 
   const filePath = isAbsolute(src) ? src : resolve(baseDir, decodeFilePath(src));
@@ -243,16 +246,30 @@ export async function resolveAttachmentSource(
     throw new Error(`Could not read ${filePath}: ${error?.message || "unknown error"}`);
   }
   assertWithinSizeLimit(bytes.byteLength, filePath);
-  const { mimeType } = classifyFile(bytes, filePath, filePath);
-  return { kind: "bytes", bytes, mimeType, suggestedName: withExtension(basename(filePath), mimeType) };
+  const { mimeType, isImage } = classifyFile(bytes, filePath, filePath);
+  return {
+    kind: "bytes",
+    bytes,
+    mimeType,
+    suggestedName: withExtension(basename(filePath), mimeType, isImage),
+  };
 }
 
 /**
- * Append the extension matching the content type when the name has none -
- * ClickUp decides between image tile, Office preview and plain file card by it.
+ * Make the extension match the content - ClickUp decides between inline image,
+ * Office preview and plain file card by it. A missing extension is appended, and
+ * image bytes under a foreign extension (photo.dat, render.php) get the image
+ * extension, otherwise they would be embedded as a file card.
  */
-function withExtension(name: string, mimeType: string): string {
-  return extname(name) ? name : `${name}${extensionForMimeType(mimeType)}`;
+function withExtension(name: string, mimeType: string, isImage: boolean): string {
+  const extension = extname(name);
+  if (!extension) {
+    return `${name}${extensionForMimeType(mimeType)}`;
+  }
+  if (isImage && !IMAGE_EXTENSIONS.has(extensionOf(name))) {
+    return `${basename(name, extension)}${extensionForMimeType(mimeType)}`;
+  }
+  return name;
 }
 
 /**

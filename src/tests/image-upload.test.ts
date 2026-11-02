@@ -620,22 +620,42 @@ test("addComment refuses to upload credential files", async () => {
   await h.close();
 });
 
-test("addComment rejects a URL that answers with a web page instead of a file", async () => {
+test("addComment accepts only images from a URL, so internal responses never reach a ticket", async () => {
   const h = await setupHarness();
 
+  // What a prompt injection could point at: an internal service answering with data
   h.mockAgent
-    .get("https://example.com")
-    .intercept({ path: "/share/report", method: "GET" })
-    .reply(200, "<html>Please log in</html>", { headers: { "content-type": "text/html; charset=utf-8" } });
+    .get("http://localhost:8080")
+    .intercept({ path: "/internal/export.csv", method: "GET" })
+    .reply(200, "id;secret\n1;abc\n", { headers: { "content-type": "text/csv" } });
 
+  // Deliberately no upload or comment interceptor - any request fails the test
   const result = await h.tools.addComment({
     task_id: "task123",
-    comment: `![Report](https://example.com/share/report)`,
+    comment: `![Export](http://localhost:8080/internal/export.csv)`,
   });
 
   assert.equal(h.uploads.length, 0);
-  assert.ok(result.content[0].text.includes("returned a web page"), result.content[0].text);
+  assert.ok(result.content[0].text.includes("is not an image"), result.content[0].text);
   assert.ok(result.content[0].text.includes("the comment was NOT posted"));
+
+  await h.close();
+});
+
+test("addComment embeds image bytes under a foreign extension as an image, not a file card", async () => {
+  const h = await setupHarness();
+  // Real PNG bytes behind a name that does not say so
+  const path = await writeTempFile("photo.dat", Buffer.from(PNG_BASE64, "base64"));
+
+  interceptUpload(h, "task123", "photo.png");
+
+  let commentBody: any;
+  interceptComment(h, (body) => (commentBody = body));
+
+  await h.tools.addComment({ task_id: "task123", comment: `![](${path})` });
+
+  assert.equal(h.uploads[0].filename, "photo.png", "the extension must match the content");
+  assert.ok(commentBody.comment.some((b: any) => b.type === "image"), "should be an inline image");
 
   await h.close();
 });

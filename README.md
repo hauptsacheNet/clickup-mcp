@@ -334,7 +334,10 @@ Notes:
   real image is rejected instead of being attached as a broken image.
 - **Credential files are never uploaded**: dotfiles (`.env`, `.npmrc`, ...), private keys
   (`id_rsa`, `*.pem`, `*.key`, ...) and anything under `.ssh`, `.aws`, `.gnupg`, `.kube`,
-  `.docker` or `.azure`. A URL that answers with a web page instead of a file is rejected too.
+  `.docker` or `.azure`.
+- **Only images are taken from http(s) URLs.** Other files must come from a local path
+  or a `data:` URI - otherwise a prompt injection could point at an internal service
+  (`localhost`, a cloud metadata endpoint) and get its response attached to the ticket.
 - A reference that fails **aborts the write**: `addComment`, `editComment` and
   `updateTask` report every broken reference and change nothing, so the markdown can be
   fixed and the call retried without creating duplicates. `createTask` validates its
