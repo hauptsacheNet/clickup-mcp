@@ -12,6 +12,7 @@ Model Context Protocol (MCP) server enabling AI assistants to interact with Clic
 | **Authentication**   | API key only                                          | OAuth only                                  |
 | **Task Context**     | Complete with comments, status history, inline images | Requires mutiple tool calls for full contxt |
 | **Image Support**    | Read and write: inline images with smart size budgeting, and `![](local/path.png)` uploads automatically | Upload via separate tool calls; base64 capped at ~200KB |
+| **File Attachments** | `![Export](local/report.xlsx)` attaches Excel, CSV, PDF or any other file as a file card in comments | Upload via separate tool call |
 | **Search**           | Fuzzy search on recent tasks (limited scope)          | Full ClickUp search database                |
 | **Documents**        | CRUD operations                                       | CRUD + document search                      |
 | **Time Tracking**    | View and create entries                               | Timers and entries                          |
@@ -231,7 +232,7 @@ This MCP server can be configured using environment variables. In the desktop ex
 - `CLICKUP_MCP_MODE`: (Optional) Controls which tools are available. Options: `read-minimal`, `read`, `write` (default).
 - `MAX_IMAGES`: (Optional) The maximum number of images to return for a task in `getTaskById`. Defaults to 4.
 - `MAX_RESPONSE_SIZE_MB`: (Optional) The maximum response size in megabytes for `getTaskById`. Uses intelligent size budgeting to fit the most important images within the limit. Defaults to 1.
-- `MAX_UPLOAD_SIZE_MB`: (Optional) The maximum size of a single image uploaded when writing comments or descriptions. Defaults to 10.
+- `MAX_UPLOAD_SIZE_MB`: (Optional) The maximum size of a single image or file uploaded when writing comments or descriptions. Defaults to 10.
 - `CLICKUP_COMMENT_EDIT_WINDOW_HOURS`: (Optional) How long after creation `editComment` may still rewrite a comment. Defaults to 24. Set to `0` to disable comment editing entirely.
 - `CLICKUP_PRIMARY_LANGUAGE`: (Optional) A hint for the primary language used in your ClickUp tasks (e.g., "de" for German, "en" for English). This helps the `searchTask` tool provide more tailored guidance in its description for multilingual searches.
 - `LANG`: (Optional) If `CLICKUP_PRIMARY_LANGUAGE` is not set, the MCP will check this standard environment variable (e.g., "en_US.UTF-8", "de_DE") as a fallback to infer the primary language.
@@ -288,7 +289,7 @@ When updating task descriptions, content is safely appended:
 
 This ensures no existing content is ever lost while maintaining a clear audit trail.
 
-## Writing Images Into Tickets
+## Writing Images and Files Into Tickets
 
 `addComment`, `editComment`, `createTask` and `updateTask` accept images as ordinary markdown. Because
 this server runs locally, it reads the file itself - so a **local path is enough**:
@@ -304,16 +305,42 @@ Ist umgesetzt. So sieht es aus:
 Accepted sources: local file paths, `data:` URIs, http(s) URLs (downloaded, then
 re-uploaded), and existing ClickUp attachment URLs (embedded without re-uploading).
 
+**Any other file works the same way.** Excel and CSV exports are the typical case -
+comments cannot render tables, so attaching the spreadsheet is usually the better choice:
+
+```markdown
+Die Auswertung für März liegt bei:
+
+![Auswertung März](/Users/me/exports/auswertung-2026-03.xlsx)
+```
+
+Images render inline. Every other file becomes a **file card** in a comment (the same
+card the ClickUp UI creates) and a plain link in a task description. ClickUp can preview
+Excel, Word and PowerPoint files without downloading them, if the workspace enables the
+[Preview Word, Excel, and Powerpoint files](https://help.clickup.com/hc/en-us/articles/37682636758551-Activate-the-Preview-Word-Excel-and-Powerpoint-files-in-ClickUp-ClickApp)
+ClickApp. Reading a comment returns its file cards as `![name](url)`, so a comment read via
+`getTaskById` can be passed back to `editComment` without losing them.
+
 Notes:
 
 - **Prefer paths over base64.** A path costs a few tokens; the same screenshot as a
   `data:` URI costs roughly 4/3 of its file size in the request.
 - **The caption becomes the attachment filename**, and that filename is what ClickUp
-  displays beneath the image - so write a caption that reads well.
+  displays beneath the image or on the file card - so write a caption that reads well.
+  The source's extension is kept (`![Auswertung](x.xlsx)` uploads `Auswertung.xlsx`).
 - **An image inside a numbered list breaks ClickUp's numbering.** Write walkthrough
   steps as bold lines with the image between them, as above.
-- Only real PNG/JPEG/GIF/WebP files are uploaded - the content is checked, not the
-  extension. A file that fails **aborts the write**: `addComment`, `editComment` and
+- Images are recognised by their content: a `.png`/`.jpg`/`.gif`/`.webp` that is not a
+  real image is rejected instead of being attached as a broken image.
+- **Credential files are never uploaded**: dotfiles (`.env`, `.npmrc`, ...), private keys
+  (`id_rsa`, `*.pem`, `*.key`, ...) and anything under `.ssh`, `.aws`, `.gnupg`, `.kube`,
+  `.docker` or `.azure`. Symlinks are resolved first and checked by their target, only
+  regular files are read, and `/proc`, `/sys` and `/dev` are refused (`/proc/self/environ`
+  would otherwise expose the API key).
+- **Only images are taken from http(s) URLs.** Other files must come from a local path
+  or a `data:` URI - otherwise a prompt injection could point at an internal service
+  (`localhost`, a cloud metadata endpoint) and get its response attached to the ticket.
+- A reference that fails **aborts the write**: `addComment`, `editComment` and
   `updateTask` report every broken reference and change nothing, so the markdown can be
   fixed and the call retried without creating duplicates. `createTask` validates its
   images before creating the task; only an upload failing afterwards is reported as a
