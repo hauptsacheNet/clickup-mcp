@@ -1,6 +1,6 @@
 import { Buffer } from "buffer";
 import { randomUUID } from "crypto";
-import { readFile } from "fs/promises";
+import { readFile, realpath, stat } from "fs/promises";
 import { basename, extname, isAbsolute, resolve } from "path";
 import { IMAGE_EXTENSIONS } from "../clickup-text";
 import { CONFIG } from "./config";
@@ -156,6 +156,48 @@ function assertNotSecretFile(filePath: string): void {
   }
 }
 
+/** Virtual filesystems: /proc/self/environ alone would hand out CLICKUP_API_KEY */
+const VIRTUAL_FILESYSTEMS = ["/proc", "/sys", "/dev"];
+
+/**
+ * Read a local file for upload, judging the file that is actually opened.
+ *
+ * The path text alone is not enough: a harmless-looking symlink can point at
+ * ~/.ssh/id_rsa, and /proc/self/environ passes every name check while holding
+ * this process's environment, API key included. So symlinks are resolved first,
+ * both the written and the real path must pass the credential check, and only
+ * regular files outside the virtual filesystems are read.
+ */
+async function readLocalFile(filePath: string): Promise<Buffer> {
+  let realPath: string;
+  try {
+    realPath = await realpath(filePath);
+  } catch (error: any) {
+    if (error?.code === "ENOENT") {
+      throw new Error(`No such file: ${filePath}`);
+    }
+    throw new Error(`Could not read ${filePath}: ${error?.message || "unknown error"}`);
+  }
+
+  assertNotSecretFile(filePath);
+  assertNotSecretFile(realPath);
+  if (VIRTUAL_FILESYSTEMS.some((root) => realPath === root || realPath.startsWith(`${root}/`))) {
+    throw new Error(`${filePath} is a system file and is never uploaded`);
+  }
+
+  const stats = await stat(realPath);
+  if (!stats.isFile()) {
+    throw new Error(`${filePath} is not a regular file`);
+  }
+  // Check before reading, so an oversized file is never loaded into memory
+  assertWithinSizeLimit(stats.size, filePath);
+  try {
+    return await readFile(realPath);
+  } catch (error: any) {
+    throw new Error(`Could not read ${filePath}: ${error?.message || "unknown error"}`);
+  }
+}
+
 function assertWithinSizeLimit(byteLength: number, source: string): void {
   const limit = CONFIG.maxUploadSizeMB * 1024 * 1024;
   if (byteLength > limit) {
@@ -235,16 +277,7 @@ export async function resolveAttachmentSource(
   }
 
   const filePath = isAbsolute(src) ? src : resolve(baseDir, decodeFilePath(src));
-  assertNotSecretFile(filePath);
-  let bytes: Buffer;
-  try {
-    bytes = await readFile(filePath);
-  } catch (error: any) {
-    if (error?.code === "ENOENT") {
-      throw new Error(`No such file: ${filePath}`);
-    }
-    throw new Error(`Could not read ${filePath}: ${error?.message || "unknown error"}`);
-  }
+  const bytes = await readLocalFile(filePath);
   assertWithinSizeLimit(bytes.byteLength, filePath);
   const { mimeType, isImage } = classifyFile(bytes, filePath, filePath);
   return {

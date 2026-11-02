@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { MockAgent, setGlobalDispatcher } from "undici";
-import { mkdtemp, writeFile } from "fs/promises";
+import { mkdtemp, symlink, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
 
@@ -616,6 +616,30 @@ test("addComment refuses to upload credential files", async () => {
   assert.ok(text.includes("2 image/file reference(s) could not be used"), text);
   assert.ok(text.includes("looks like a credential"), text);
   assert.ok(text.includes("the comment was NOT posted"));
+
+  await h.close();
+});
+
+test("addComment judges the real file behind a path: no symlinked secrets, no /proc", async () => {
+  const h = await setupHarness();
+  const envPath = await writeTempFile(".env", "CLICKUP_API_KEY=secret");
+  const dir = await mkdtemp(join(tmpdir(), "clickup-file-test-"));
+  const innocentLink = join(dir, "report.csv");
+  await symlink(envPath, innocentLink);
+
+  // Deliberately no upload or comment interceptor - any request fails the test
+  const result = await h.tools.addComment({
+    task_id: "task123",
+    comment: `![Report](${innocentLink})\n\n![Env](/proc/self/environ)\n\n![Dir](${dir})`,
+  });
+
+  assert.equal(h.uploads.length, 0);
+  const text = result.content[0].text;
+  assert.ok(text.includes("3 image/file reference(s) could not be used"), text);
+  assert.ok(text.includes("looks like a credential"), "the symlink target must be checked");
+  assert.ok(text.includes("is a system file"), "/proc must be refused");
+  assert.ok(text.includes("is not a regular file"), "directories must be refused");
+  assert.ok(!text.includes("CLICKUP_API_KEY"), "no file content may leak into the error");
 
   await h.close();
 });

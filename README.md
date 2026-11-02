@@ -334,7 +334,9 @@ Notes:
   real image is rejected instead of being attached as a broken image.
 - **Credential files are never uploaded**: dotfiles (`.env`, `.npmrc`, ...), private keys
   (`id_rsa`, `*.pem`, `*.key`, ...) and anything under `.ssh`, `.aws`, `.gnupg`, `.kube`,
-  `.docker` or `.azure`.
+  `.docker` or `.azure`. Symlinks are resolved first and checked by their target, only
+  regular files are read, and `/proc`, `/sys` and `/dev` are refused (`/proc/self/environ`
+  would otherwise expose the API key).
 - **Only images are taken from http(s) URLs.** Other files must come from a local path
   or a `data:` URI - otherwise a prompt injection could point at an internal service
   (`localhost`, a cloud metadata endpoint) and get its response attached to the ticket.
