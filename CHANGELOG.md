@@ -5,10 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.10.0] - 2026-11-02
 
 ### Added
-- **Comments and descriptions can attach any file, not just images.** Excel and CSV exports are the main use case: ClickUp comments cannot render tables, and ClickUp previews Excel/Word/PowerPoint attachments in the browser when the workspace enables the [Preview Word, Excel, and Powerpoint files](https://help.clickup.com/hc/en-us/articles/37682636758551-Activate-the-Preview-Word-Excel-and-Powerpoint-files-in-ClickUp-ClickApp) ClickApp. The existing embed syntax is reused - `![Auswertung März](/path/to/export.xlsx)` - and accepts local paths, `data:` URIs and existing ClickUp attachment URLs. http(s) URLs stay images-only: any other downloaded body could be the response of an internal service (`localhost`, a cloud metadata endpoint) that a prompt injection points at. In comments a non-image file becomes a `type: "attachment"` fragment carrying the full upload response, which renders as the same file card the ClickUp UI creates; in task descriptions it becomes a plain markdown link, since an image tag pointing at a spreadsheet renders as a broken image. Uploads carry the proper content type (e.g. `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`) and keep the source's extension when the caption is used as filename. The tool descriptions of `addComment`, `editComment`, `createTask` and `updateTask` explain this, and point at attaching a spreadsheet instead of pasting a large table.
+- **Comments and descriptions can attach any file, not just images** ([#41](https://github.com/hauptsacheNet/clickup-mcp/pull/41)). Excel and CSV exports are the main use case: ClickUp comments cannot render tables, and ClickUp previews Excel/Word/PowerPoint attachments in the browser when the workspace enables the [Preview Word, Excel, and Powerpoint files](https://help.clickup.com/hc/en-us/articles/37682636758551-Activate-the-Preview-Word-Excel-and-Powerpoint-files-in-ClickUp-ClickApp) ClickApp. The existing embed syntax is reused - `![Auswertung März](/path/to/export.xlsx)` - and accepts local paths, `data:` URIs and existing ClickUp attachment URLs. http(s) URLs stay images-only: any other downloaded body could be the response of an internal service (`localhost`, a cloud metadata endpoint) that a prompt injection points at. In comments a non-image file becomes a `type: "attachment"` fragment carrying the full upload response, which renders as the same file card the ClickUp UI creates; in task descriptions it becomes a plain markdown link, since an image tag pointing at a spreadsheet renders as a broken image. Uploads carry the proper content type (e.g. `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`) and keep the source's extension when the caption is used as filename. The tool descriptions of `addComment`, `editComment`, `createTask` and `updateTask` explain this, and point at attaching a spreadsheet instead of pasting a large table.
 - **File cards survive a read/edit round trip.** `getTaskById` previously printed only the filename of a file attached to a comment (and dropped the URL); it now renders the card as `![name](url)`, so passing a comment back to `editComment` re-embeds the same attachment without re-uploading it.
 
 ### Changed
@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Image bytes under a foreign extension (`photo.dat`, `render.php`) are uploaded with the matching image extension, so they render inline instead of as a file card.
 - A `.png`/`.jpg`/`.gif`/`.webp` whose content is not a real image is still rejected - it is not silently attached as a file.
 - The write responses report `files_attached` instead of `images_attached`.
+
+### Fixed
+- Typo in the MCP server instructions sent to clients ("Is you are asked" → "If you are asked") ([#40](https://github.com/hauptsacheNet/clickup-mcp/pull/40)).
 
 ## [1.9.0] - 2026-09-04
 
