@@ -38,7 +38,7 @@ async function initializeServer() {
   
   const instructions = [
     `ClickUp is a Ticket system. It is used to track tasks, bugs, and other work items.`,
-    `Is you are asked for infos about projects or tasks, search for tasks or documents in ClickUp (this MCP) first.`,
+    `If you are asked for infos about projects or tasks, search for tasks or documents in ClickUp (this MCP) first.`,
     `The following spaces/projects are available:`,
     formattedSpaces
   ].join('\n');
