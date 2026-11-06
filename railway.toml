@@ -1,5 +1,5 @@
 [build]
-builder = "nixpacks"
+builder = "railpack"
 
 [deploy]
 startCommand = "node dist/http.js"
