@@ -65,7 +65,7 @@
     "undici": "^7.16.0"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22.23.4"
   },
   "repository": {
     "type": "git",
