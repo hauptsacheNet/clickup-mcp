@@ -920,22 +920,13 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
           }
         }
 
-        // ClickUp's create response does not carry the Custom Task ID (e.g. ENG-302), so read the
-        // task once to report the ID people use to refer to it.
+        // ClickUp's create response does not carry the Custom Task ID (e.g. ENG-302), and ClickUp
+        // assigns it shortly after the create call returns, so an immediate read can miss it too.
+        // Read the task back a few times, briefly, to report the ID people use to refer to it.
         if (!createdTask.custom_id) {
-          try {
-            const refreshResponse = await fetch(`https://api.clickup.com/api/v2/task/${createdTask.id}`, {
-              headers: { Authorization: CONFIG.apiKey },
-            });
-            if (refreshResponse.ok) {
-              const refreshed = await refreshResponse.json();
-              if (refreshed?.custom_id) {
-                createdTask.custom_id = refreshed.custom_id;
-              }
-            }
-          } catch (refreshError) {
-            // The task exists; a missing custom_id in the response is not worth failing the call over.
-            console.error('Could not read the created task back for its custom_id:', refreshError);
+          const customId = await readBackCustomId(createdTask.id);
+          if (customId) {
+            createdTask.custom_id = customId;
           }
         }
 
@@ -979,6 +970,39 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
 }
 
 // Write-specific utility functions
+
+/** Waits before each read-back of a new task's Custom Task ID; the first read is immediate. */
+const CUSTOM_ID_READ_BACK_DELAYS_MS = [0, 400, 800, 1600];
+
+/**
+ * Read a newly created task until ClickUp has assigned its Custom Task ID, or give up after a few
+ * short tries (about 3 s in total). Workspaces without Custom Task IDs never get one, so a task
+ * that has none after the last try is reported without it. A failed read stops the retries: the
+ * task exists, and a missing custom_id is not worth failing the call over.
+ */
+async function readBackCustomId(taskId: string): Promise<string | undefined> {
+  for (const delayMs of CUSTOM_ID_READ_BACK_DELAYS_MS) {
+    if (delayMs > 0) {
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+    try {
+      const response = await fetch(`https://api.clickup.com/api/v2/task/${taskId}`, {
+        headers: { Authorization: CONFIG.apiKey },
+      });
+      if (!response.ok) {
+        return undefined;
+      }
+      const task = await response.json();
+      if (task?.custom_id) {
+        return task.custom_id;
+      }
+    } catch (error) {
+      console.error('Could not read the created task back for its custom_id:', error);
+      return undefined;
+    }
+  }
+  return undefined;
+}
 
 function createAssigneeDescription(userData: any): string {
   const user = userData.user;
