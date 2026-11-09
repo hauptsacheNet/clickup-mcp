@@ -190,8 +190,8 @@ The ClickUp MCP supports three operational modes to balance functionality, secur
 | `getTaskById`          |      ✅       |  ✅   |   ✅   | Get complete task details including comments (with threaded replies), images, and metadata |
 | `addComment`           |      ❌       |  ❌   |   ✅   | Add comments to tasks, or reply inside a comment thread via `parent_comment_id`         |
 | `editComment`          |      ❌       |  ❌   |   ✅   | Correct your own comment within 24h instead of posting a follow-up                      |
-| `updateTask`           |      ❌       |  ❌   |   ✅   | Update tasks (status, priority, assignees, custom fields, etc.); descriptions can be appended to or replaced entirely |
-| `createTask`           |      ❌       |  ❌   |   ✅   | Create new tasks with full markdown support and custom fields                           |
+| `updateTask`           |      ❌       |  ❌   |   ✅   | Update tasks (status, priority, assignees, custom fields, task type, etc.); descriptions can be appended to or replaced entirely |
+| `createTask`           |      ❌       |  ❌   |   ✅   | Create new tasks with full markdown support, custom fields and a task type              |
 | `searchTasks`          |      ✅       |  ✅   |   ✅   | Find tasks by content, keywords, assignees, or project context                          |
 | `searchSpaces`         |      ❌       |  ✅   |   ✅   | Browse workspace structure, project organization, and documents                         |
 | `getListInfo`          |      ❌       |  ✅   |   ✅   | Get list details and available statuses for task creation                               |
@@ -347,6 +347,23 @@ Notes:
   images before creating the task; only an upload failing afterwards is reported as a
   warning, since the task already exists at that point.
 - Attachments always belong to a task, so document pages cannot embed uploads this way.
+
+## Task Types and Custom Task IDs
+
+**Custom Task IDs.** If the workspace uses the
+[Custom Task IDs](https://help.clickup.com/hc/en-us/articles/6309943321751-Use-Custom-Task-IDs) ClickApp,
+every tool that takes a task (`getTaskById`, `updateTask`, `addComment`, `editComment`,
+`getTimeEntries`, `createTimeEntry`, the parent/dependency/link IDs of `createTask` and
+`updateTask`, and `searchTasks` terms) also accepts the custom ID, e.g. `ENG-302`. It is
+resolved once via `?custom_task_ids=true&team_id=<CLICKUP_TEAM_ID>` (cached for a minute)
+and the generated ID is used from then on. `getTaskById` and the write responses show both
+(`task_id`, `custom_id`).
+
+**Task types** (`write` mode). `custom_item_id` on `createTask` and `updateTask` sets the
+task type, either as the numeric ID (e.g. `1006`) or by name (e.g. `"Bug"`, resolved via
+`GET /team/{team_id}/custom_item`). `0` / `"Task"` is the default type. An unknown name
+aborts before anything is written. `getTaskById` shows it as
+`task_type: Bug (custom_item_id: 1006)`.
 
 ## Performance & Limitations
 

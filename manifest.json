@@ -32,7 +32,7 @@
   "tools": [
     {
       "name": "getTaskById",
-      "description": "Get a ClickUp task with images and comments (including threaded comment replies) by ID. Always use this URL when referencing tasks in conversations or sharing with others."
+      "description": "Get a ClickUp task with images and comments (including threaded comment replies) by ID or Custom Task ID (e.g. ENG-302). Always use this URL when referencing tasks in conversations or sharing with others."
     },
     {
       "name": "addComment",
@@ -44,11 +44,11 @@
     },
     {
       "name": "updateTask",
-      "description": "Update various aspects of an existing task including name, description (append a dated section or replace the whole text), status, priority, dates, tags, assignees, and parent relationships. Images and files in the description are uploaded automatically (files become links). Custom fields can be set by name or id - run getListCustomFields first."
+      "description": "Update various aspects of an existing task including name, description (append a dated section or replace the whole text), status, priority, dates, tags, assignees, parent relationships and task type. Accepts Custom Task IDs (e.g. ENG-302). Images and files in the description are uploaded automatically (files become links). Custom fields can be set by name or id - run getListCustomFields first."
     },
     {
       "name": "createTask",
-      "description": "Create a new task in a specific list with full markdown support, assignment to users, and automatic linking to related tasks. Images and files in the description are uploaded automatically (files become links). Custom fields can be set by name or id - run getListCustomFields first."
+      "description": "Create a new task in a specific list with full markdown support, assignment to users, a task type, and automatic linking to related tasks. Images and files in the description are uploaded automatically (files become links). Custom fields can be set by name or id - run getListCustomFields first."
     },
     {
       "name": "searchTasks",
