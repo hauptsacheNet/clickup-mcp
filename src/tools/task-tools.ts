@@ -3,9 +3,12 @@ import { z } from "zod";
 import { convertMarkdownToToolCallResult, convertClickUpTextItemsToToolCallResult } from "../clickup-text";
 import { ContentBlock, DatedContentEvent, ImageMetadataBlock } from "../shared/types";
 import { CONFIG } from "../shared/config";
-import { isTaskId, getSpaceDetails, getAllTeamMembers } from "../shared/utils";
+import { getSpaceDetails, getAllTeamMembers } from "../shared/utils";
+import { TASK_ID_FORMAT_HINT, resolveTaskId, taskIdSchema } from "../shared/task-ids";
 import { downloadImages } from "../shared/image-processing";
 import { ExistingComment, fetchAllTopLevelComments, fetchRepliesByComment } from "../shared/comments";
+import { formatCustomFieldReadValue } from "../shared/custom-fields";
+import { describeCustomItem } from "../shared/task-types";
 
 // Read-specific utility functions
 
@@ -18,21 +21,16 @@ export function registerTaskToolsRead(server: McpServer, userData: any) {
       "The response provides complete context including task details, comments, and status history."
     ].join("\n"),
     {
-      id: z
-        .string()
-        .min(6)
-        .max(16)
-        .refine(val => isTaskId(val), {
-          message: "Task ID must be 6-16 alphanumeric characters only"
-        })
-        .describe(
-          `The 6-16 character ID of the task to get without a prefix like "#", "CU-" or "https://app.clickup.com/t/"`
-        ),
+      id: taskIdSchema(`The task to get: ${TASK_ID_FORMAT_HINT}`),
     },
     {
       readOnlyHint: true
     },
-    async ({ id }) => {
+    async ({ id: requestedId }) => {
+      // Custom Task IDs (e.g. ENG-302) are resolved to the generated ID first, so every
+      // loader below - comments, time in status, time entries - can use it.
+      const id = await resolveTaskId(requestedId);
+
       // 1. Load base task content, comment events, and status change events in parallel
       const [taskDetailContentBlocks, commentEvents, statusChangeEvents] = await Promise.all([
         loadTaskContent(id), // Returns Promise<ContentBlock[]>
@@ -323,6 +321,7 @@ export async function generateTaskMetadata(task: any, timeEntries?: any[], isDet
 
   const metadataLines = [
     `task_id: ${task.id}`,
+    ...(task.custom_id ? [`custom_id: ${task.custom_id}`] : []),
     `task_url: ${task.url}`,
     `name: ${task.name}`,
     `status: ${task.status.status}`,
@@ -333,6 +332,13 @@ export async function generateTaskMetadata(task: any, timeEntries?: any[], isDet
     `list: ${task.list.name} (${task.list.id})`,
     `space: ${spaceName} (${spaceIdForDisplay})`,
   ];
+
+  // Task type (custom item) - the name lookup is one cached call, so only in the detail view
+  if (isDetailView) {
+    metadataLines.push(`task_type: ${await describeCustomItem(task.custom_item_id)}`);
+  } else if (task.custom_item_id) {
+    metadataLines.push(`task_type: custom_item_id: ${task.custom_item_id}`);
+  }
 
   // Add priority if it exists
   if (task.priority !== undefined && task.priority !== null) {
@@ -424,23 +430,9 @@ export async function generateTaskMetadata(task: any, timeEntries?: any[], isDet
   // Add custom fields if they exist
   if (task.custom_fields && task.custom_fields.length > 0) {
     task.custom_fields.forEach((field: any) => {
-      if (field.value !== undefined && field.value !== null && field.value !== '') {
+      const fieldValue = formatCustomFieldReadValue(field);
+      if (fieldValue !== null) {
         const fieldName = field.name.toLowerCase().replace(/\s+/g, '_');
-        let fieldValue = field.value;
-
-        // Handle different custom field types
-        if (field.type === 'drop_down' && typeof field.value === 'number') {
-          // For dropdown fields, find the selected option
-          const selectedOption = field.type_config?.options?.find((opt: any) => opt.orderindex === field.value);
-          fieldValue = selectedOption?.name || field.value;
-        } else if (Array.isArray(field.value)) {
-          // For multi-select or array values
-          fieldValue = field.value.map((v: any) => v.name || v).join(', ');
-        } else if (typeof field.value === 'object') {
-          // For object values (like users), extract meaningful data
-          fieldValue = field.value.username || field.value.name || JSON.stringify(field.value);
-        }
-
         metadataLines.push(`custom_${fieldName}: ${fieldValue}`);
       }
     });
