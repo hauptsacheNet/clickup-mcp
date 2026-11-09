@@ -920,6 +920,25 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
           }
         }
 
+        // ClickUp's create response does not carry the Custom Task ID (e.g. ENG-302), so read the
+        // task once to report the ID people use to refer to it.
+        if (!createdTask.custom_id) {
+          try {
+            const refreshResponse = await fetch(`https://api.clickup.com/api/v2/task/${createdTask.id}`, {
+              headers: { Authorization: CONFIG.apiKey },
+            });
+            if (refreshResponse.ok) {
+              const refreshed = await refreshResponse.json();
+              if (refreshed?.custom_id) {
+                createdTask.custom_id = refreshed.custom_id;
+              }
+            }
+          } catch (refreshError) {
+            // The task exists; a missing custom_id in the response is not worth failing the call over.
+            console.error('Could not read the created task back for its custom_id:', refreshError);
+          }
+        }
+
         const responseLines = formatTaskResponse(createdTask, 'created', {
           list_id, name, description, status, priority, due_date, start_date, time_estimate, tags, parent_task_id, assignees,
           task_type: resolvedCustomItemId !== undefined ? await describeCustomItem(resolvedCustomItemId) : undefined

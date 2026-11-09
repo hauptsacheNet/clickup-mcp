@@ -189,3 +189,23 @@ test("updateTask reports the Custom Task ID of the updated task", async (t) => {
 
   await teardown(t, mockAgent);
 });
+
+test("createTask reads the task back to report the Custom Task ID the create response lacks", async (t) => {
+  t.mock.timers.enable();
+  const { mockAgent, client, tools, serverStub } = setup();
+  const { registerTaskToolsWrite } = await import("../tools/task-write-tools");
+
+  client.intercept({ path: "/api/v2/list/listC/task", method: "POST" }).reply(200, {
+    id: "new3", name: "Y", status: { status: "open" }, assignees: [], url: "https://app.clickup.com/t/new3",
+  });
+  client.intercept({ path: "/api/v2/task/new3", method: "GET" }).reply(200, { id: "new3", custom_id: "ENG-7745" });
+
+  registerTaskToolsWrite(serverStub, { user: { username: "me", id: "u1" } });
+  const result = await tools.createTask({ list_id: "listC", name: "Y" });
+
+  const text = result.content[0].text;
+  assert.ok(text.includes("custom_id: ENG-7745"), text);
+  (mockAgent as any).assertNoPendingInterceptors();
+
+  await teardown(t, mockAgent);
+});
