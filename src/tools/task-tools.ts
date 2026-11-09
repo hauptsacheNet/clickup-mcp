@@ -8,6 +8,7 @@ import { TASK_ID_FORMAT_HINT, resolveTaskId, taskIdSchema } from "../shared/task
 import { downloadImages } from "../shared/image-processing";
 import { ExistingComment, fetchAllTopLevelComments, fetchRepliesByComment } from "../shared/comments";
 import { formatCustomFieldReadValue } from "../shared/custom-fields";
+import { describeCustomItem } from "../shared/task-types";
 
 // Read-specific utility functions
 
@@ -320,6 +321,7 @@ export async function generateTaskMetadata(task: any, timeEntries?: any[], isDet
 
   const metadataLines = [
     `task_id: ${task.id}`,
+    ...(task.custom_id ? [`custom_id: ${task.custom_id}`] : []),
     `task_url: ${task.url}`,
     `name: ${task.name}`,
     `status: ${task.status.status}`,
@@ -330,6 +332,13 @@ export async function generateTaskMetadata(task: any, timeEntries?: any[], isDet
     `list: ${task.list.name} (${task.list.id})`,
     `space: ${spaceName} (${spaceIdForDisplay})`,
   ];
+
+  // Task type (custom item) - the name lookup is one cached call, so only in the detail view
+  if (isDetailView) {
+    metadataLines.push(`task_type: ${await describeCustomItem(task.custom_item_id)}`);
+  } else if (task.custom_item_id) {
+    metadataLines.push(`task_type: custom_item_id: ${task.custom_item_id}`);
+  }
 
   // Add priority if it exists
   if (task.priority !== undefined && task.priority !== null) {

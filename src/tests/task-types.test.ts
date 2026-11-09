@@ -128,3 +128,64 @@ test("updateTask sends the task type in the update body", async (t) => {
 
   await teardown(t, mockAgent);
 });
+
+test("getTaskById shows the custom task ID and the task type name", async (t) => {
+  t.mock.timers.enable();
+  const { mockAgent, client } = setup();
+  const { registerTaskToolsRead } = await import("../tools/task-tools");
+
+  client.intercept({ path: "/api/v2/task/ENG-302?custom_task_ids=true&team_id=team1", method: "GET" })
+    .reply(200, { id: "task321", custom_id: "ENG-302" });
+  client.intercept({ path: "/api/v2/team", method: "GET" }).reply(200, { teams: [{ id: "team1", members: [] }] });
+  client.intercept({ path: /\/api\/v2\/task\/task321\?.*/, method: "GET" }).reply(200, {
+    id: "task321",
+    custom_id: "ENG-302",
+    custom_item_id: 1006,
+    name: "Crash",
+    markdown_description: "",
+    attachments: [],
+    creator: { username: "creator", id: "1" },
+    assignees: [],
+    list: { id: "list1", name: "List" },
+    space: { id: "space1", name: "Space" },
+    status: { status: "open", type: "open" },
+    url: "https://app.clickup.com/t/task321",
+    date_created: "0",
+    date_updated: "0",
+  });
+  client.intercept({ path: /\/api\/v2\/task\/task321\/comment.*/, method: "GET" }).reply(200, { comments: [] });
+  client.intercept({ path: "/api/v2/task/task321/time_in_status", method: "GET" }).reply(200, { status_history: [], current_status: null });
+  client.intercept({ path: /\/api\/v2\/team\/team1\/time_entries.*/, method: "GET" }).reply(200, { data: [] });
+  client.intercept({ path: "/api/v2/team/team1/custom_item", method: "GET" }).reply(200, CUSTOM_ITEMS);
+
+  const tools: Record<string, any> = {};
+  registerTaskToolsRead({ tool: (name: string, _d: string, _s: any, _o: any, handler: any) => { tools[name] = handler; } } as any, { user: { username: "me", id: "u1" } });
+
+  const result = await tools.getTaskById({ id: "ENG-302" });
+  const text = result.content.map((block: any) => block.text || "").join("\n");
+
+  assert.ok(text.includes("task_id: task321"), text);
+  assert.ok(text.includes("custom_id: ENG-302"), text);
+  assert.ok(text.includes("task_type: Bug (custom_item_id: 1006)"), text);
+
+  await teardown(t, mockAgent);
+});
+
+test("updateTask reports the Custom Task ID of the updated task", async (t) => {
+  t.mock.timers.enable();
+  const { mockAgent, client, tools, serverStub } = setup();
+  const { registerTaskToolsWrite } = await import("../tools/task-write-tools");
+
+  client
+    .intercept({ path: "/api/v2/task/task124?include_markdown_description=true", method: "GET" })
+    .reply(200, { id: "task124", name: "T", markdown_description: "", status: { status: "open" }, assignees: [], url: "https://app.clickup.com/t/task124", list: { id: "listE" } });
+  client.intercept({ path: "/api/v2/task/task124", method: "PUT" })
+    .reply(200, { id: "task124", custom_id: "ENG-305", name: "Renamed", status: { status: "open" }, assignees: [], url: "https://app.clickup.com/t/task124" });
+
+  registerTaskToolsWrite(serverStub, { user: { username: "me", id: "u1" } });
+  const result = await tools.updateTask({ task_id: "task124", name: "Renamed" });
+
+  assert.ok(result.content[0].text.includes("custom_id: ENG-305"), result.content[0].text);
+
+  await teardown(t, mockAgent);
+});

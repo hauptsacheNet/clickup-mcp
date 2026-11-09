@@ -1280,6 +1280,7 @@ function formatTaskResponse(task: any, operation: 'created' | 'updated', params:
   const responseLines = [
     `Task ${operation} successfully!`,
     `task_id: ${task.id}`,
+    ...(task.custom_id ? [`custom_id: ${task.custom_id}`] : []),
     `name: ${task.name}`,
     ...(operation === 'created' ? [`url: ${task.url}`] : []),
     `status: ${task.status?.status || 'Unknown'}`,
