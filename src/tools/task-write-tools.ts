@@ -9,11 +9,11 @@ import {
   rewriteMarkdownImageUrls,
 } from "../clickup-text";
 import {
-  ResolvedMarkdownImage,
-  UploadedMarkdownImage,
-  resolveMarkdownImages,
+  ResolvedMarkdownAttachment,
+  UploadedMarkdownAttachment,
+  resolveMarkdownAttachments,
   toAttachmentMap,
-  uploadResolvedImages,
+  uploadResolvedAttachments,
 } from "../shared/attachments";
 import {
   CommentPageCursor,
@@ -32,39 +32,42 @@ import {
 } from "../shared/custom-fields";
 
 /**
- * Shared wording for the image support of every markdown field in this file.
- * Kept in one place so the tools stay consistent about what a client may pass.
- */
-/**
  * Shared wording for what markdown ClickUp comments can actually render.
  * Kept in one place so addComment and editComment stay consistent.
  */
 const COMMENT_FORMATTING_HINT = [
   "FORMATTING: Headings, **bold**, *italic*, ~~strikethrough~~, `inline code`, code blocks, links, blockquotes, bullet/numbered/nested lists and checkboxes (- [ ] / - [x]) all render natively.",
-  "TABLES ARE NOT SUPPORTED by ClickUp comments - a markdown table is automatically converted to a monospace code block, which is readable but plain. Prefer bold labels or lists over tables when writing comments.",
-].join("\n");
-
-const IMAGE_SUPPORT_HINT = [
-  "IMAGES: Reference images with normal markdown - `![caption](/absolute/path/to/screenshot.png)`.",
-  "This server runs locally, so a local file path is read and uploaded automatically - never inline a screenshot as base64 when a path exists, it costs orders of magnitude more tokens.",
-  "Also accepted: `data:` URIs, http(s) URLs (downloaded and re-uploaded), and existing ClickUp attachment URLs (embedded as-is).",
-  "The caption becomes the attachment filename, which is what ClickUp displays beneath the image - so write a caption that reads well.",
+  "TABLES ARE NOT SUPPORTED by ClickUp comments - a markdown table is automatically converted to a monospace code block, which is readable but plain. Prefer bold labels or lists over tables when writing comments, and attach real tabular data as an .xlsx or .csv file instead (see FILES).",
 ].join("\n");
 
 /**
- * Phase 1 of image handling: parse the markdown and resolve every image source
- * (read files, download URLs, decode data URIs) WITHOUT writing anything.
+ * Shared wording for the image and file support of every markdown field in this file.
+ * Kept in one place so the tools stay consistent about what a client may pass.
+ */
+const ATTACHMENT_SUPPORT_HINT = [
+  "IMAGES: Reference images with normal markdown - `![caption](/absolute/path/to/screenshot.png)`.",
+  "FILES: Any other file is attached with the same syntax - `![Export March](/absolute/path/to/export.xlsx)`. Images render inline; other files become a file card in comments and a link in descriptions.",
+  "SPREADSHEETS: Excel (.xlsx/.xls) and CSV files are the main use case - ClickUp can preview Excel, Word and PowerPoint attachments directly in the browser (when the workspace enables the 'Preview Word, Excel, and Powerpoint files' ClickApp), so attach a spreadsheet instead of pasting large tables.",
+  "This server runs locally, so a local file path is read and uploaded automatically - never inline a file as base64 when a path exists, it costs orders of magnitude more tokens.",
+  "Also accepted: `data:` URIs, http(s) URLs (downloaded and re-uploaded - images only; other files must come from a local path or data URI), and existing ClickUp attachment URLs (embedded as-is).",
+  "The caption becomes the attachment filename (the original extension is kept), which is what ClickUp displays beneath the image or on the file card - so write a caption that reads well.",
+  "Credential files (dotfiles such as .env, private keys, ~/.ssh, ~/.aws) are refused.",
+].join("\n");
+
+/**
+ * Phase 1 of attachment handling: parse the markdown and resolve every embedded
+ * source (read files, download URLs, decode data URIs) WITHOUT writing anything.
  *
  * Throws when any reference is unusable, listing every broken source at once.
  * Nothing has been posted to ClickUp when this throws, so the caller's generic
  * error path returns the report and the client can fix the markdown and retry.
  */
-async function resolveImagesOrAbort(
+async function resolveAttachmentsOrAbort(
   markdown: string | undefined,
   abortNotice: string
-): Promise<{ markdown: string; images: ResolvedMarkdownImage[] }> {
+): Promise<{ markdown: string; attachments: ResolvedMarkdownAttachment[] }> {
   if (!markdown) {
-    return { markdown: markdown ?? "", images: [] };
+    return { markdown: markdown ?? "", attachments: [] };
   }
 
   // Normalise first, then use the same string for collecting and converting - the
@@ -73,48 +76,48 @@ async function resolveImagesOrAbort(
 
   const sources = collectMarkdownImageSources(normalized);
   if (sources.length === 0) {
-    return { markdown: normalized, images: [] };
+    return { markdown: normalized, attachments: [] };
   }
 
-  const { resolved, failures } = await resolveMarkdownImages(sources);
+  const { resolved, failures } = await resolveMarkdownAttachments(sources);
   if (failures.length > 0) {
     throw new Error(
       [
-        `${failures.length} image reference(s) could not be used, so ${abortNotice}:`,
+        `${failures.length} image/file reference(s) could not be used, so ${abortNotice}:`,
         ...failures.map((failure) => `  - ${failure.src}: ${failure.error}`),
-        `Fix or remove these image references and retry.`,
+        `Fix or remove these references and retry.`,
       ].join("\n")
     );
   }
 
-  return { markdown: normalized, images: resolved };
+  return { markdown: normalized, attachments: resolved };
 }
 
 /**
- * Phase 2: upload the resolved images to the task.
+ * Phase 2: upload the resolved images and files to the task.
  *
  * Throws on the first upload failure. Everything uploaded before the failure is
  * listed with its CDN URL so a retry can reference those URLs directly (existing
  * ClickUp URLs are embedded without re-uploading).
  */
-async function uploadImagesOrAbort(
+async function uploadAttachmentsOrAbort(
   taskId: string,
-  images: ResolvedMarkdownImage[],
+  attachments: ResolvedMarkdownAttachment[],
   abortNotice: string
-): Promise<UploadedMarkdownImage[]> {
-  if (images.length === 0) {
+): Promise<UploadedMarkdownAttachment[]> {
+  if (attachments.length === 0) {
     return [];
   }
 
-  const { uploaded, failure } = await uploadResolvedImages(taskId, images);
+  const { uploaded, failure } = await uploadResolvedAttachments(taskId, attachments);
   if (failure) {
     const lines = [
-      `Uploading image "${failure.src}" failed, so ${abortNotice}:`,
+      `Uploading "${failure.src}" failed, so ${abortNotice}:`,
       `  ${failure.error}`,
     ];
     if (uploaded.length > 0) {
       lines.push(
-        `${uploaded.length} image(s) were already uploaded to task ${taskId} before the failure - on retry, reference these URLs directly to avoid duplicate uploads:`,
+        `${uploaded.length} file(s) were already uploaded to task ${taskId} before the failure - on retry, reference these URLs directly to avoid duplicate uploads:`,
         ...uploaded.map((u) => `  - ${u.attachment.name}: ${u.attachment.url}`)
       );
     }
@@ -137,13 +140,13 @@ function summarizeMarkdownForEcho(markdown: string): string {
   );
 }
 
-/** Report successfully attached images so the caller can verify and link to them */
-function formatAttachedImages(uploaded: UploadedMarkdownImage[]): string[] {
+/** Report successfully attached images and files so the caller can verify and link to them */
+function formatAttachedFiles(uploaded: UploadedMarkdownAttachment[]): string[] {
   if (uploaded.length === 0) {
     return [];
   }
   return [
-    `images_attached: ${uploaded.length}`,
+    `files_attached: ${uploaded.length}`,
     ...uploaded.map((u) => `  - ${u.attachment.name} (${u.attachment.url})`),
   ];
 }
@@ -204,8 +207,8 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
         "- Link to relevant lists, spaces, or other ClickUp entities when applicable",
         "PROGRESS UPDATES: Include current status, progress information, and next steps.",
         COMMENT_FORMATTING_HINT,
-        IMAGE_SUPPORT_HINT,
-        "IMAGE LAYOUT: An image inside a numbered list breaks ClickUp's numbering. Write walkthrough steps as bold lines with a blank line before and after the image instead (`**1. Open the login page**`).",
+        ATTACHMENT_SUPPORT_HINT,
+        "IMAGE LAYOUT: An image or file inside a numbered list breaks ClickUp's numbering. Write walkthrough steps as bold lines with a blank line before and after the image instead (`**1. Open the login page**`).",
         "If external links are provided, verify they are publicly accessible and incorporate relevant information.",
         "Check the task's current status - if it's in 'backlog' or similar inactive states, suggest moving it to an active status like 'in progress' when work is being done."
       ];
@@ -232,7 +235,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
     async ({ task_id, comment, parent_comment_id }) => {
       try {
         // The reply endpoint anchors the reply to the parent comment's task and
-        // ignores task_id, while images below are uploaded to task_id - so the
+        // ignores task_id, while images and files below are uploaded to task_id - so the
         // parent must verifiably be a top-level comment of THIS task before
         // anything is written. This also rejects reply ids (nested replies are
         // not supported by ClickUp's one-level threads).
@@ -247,13 +250,13 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
           }
         }
 
-        // Resolve and upload referenced images first - the fragments need the
-        // attachment objects from the upload response, a bare URL renders as an
-        // empty tile. Any image problem aborts BEFORE the comment is posted, so
-        // the caller can fix the markdown and retry without creating duplicates.
+        // Resolve and upload referenced images and files first - the fragments need
+        // the attachment objects from the upload response, a bare URL renders as an
+        // empty tile. Any problem aborts BEFORE the comment is posted, so the
+        // caller can fix the markdown and retry without creating duplicates.
         const abortNotice = "the comment was NOT posted";
-        const { markdown, images } = await resolveImagesOrAbort(comment, abortNotice);
-        const uploaded = await uploadImagesOrAbort(task_id, images, abortNotice);
+        const { markdown, attachments } = await resolveAttachmentsOrAbort(comment, abortNotice);
+        const uploaded = await uploadAttachmentsOrAbort(task_id, attachments, abortNotice);
 
         // Convert markdown to ClickUp formatted blocks
         const commentBlocks = convertMarkdownToClickUpBlocks(markdown, toAttachmentMap(uploaded));
@@ -300,7 +303,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
                 `comment: ${summarizeMarkdownForEcho(comment)}`,
                 `date: ${timestampToIso(commentData.date || Date.now())}`,
                 `user: ${commentData.user?.username || 'Current user'}`,
-                ...formatAttachedImages(uploaded),
+                ...formatAttachedFiles(uploaded),
               ].join('\n')
             }
           ],
@@ -330,8 +333,8 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
         "ClickUp shows no 'edited' marker, so people who already read the comment will not notice the change - for anything that changes meaning after a discussion has started, prefer a follow-up comment.",
         "Editing does not reset the creation date, so the edit window does not get extended by editing.",
         COMMENT_FORMATTING_HINT,
-        IMAGE_SUPPORT_HINT,
-        "IMAGES ON EDIT: reading a comment (getTaskById) returns its images as markdown, so passing that text back keeps them - an existing ClickUp attachment URL is re-embedded without uploading again. Only an image whose markdown you drop disappears.",
+        ATTACHMENT_SUPPORT_HINT,
+        "IMAGES AND FILES ON EDIT: reading a comment (getTaskById) returns its images and file cards as `![name](url)` markdown, so passing that text back keeps them - an existing ClickUp attachment URL is re-embedded without uploading again. Only an image or file whose markdown you drop disappears from the comment (it stays attached to the task).",
         "Task URLs (https://app.clickup.com/t/TASK_ID) become live task references, and existing references are read back as such URLs - passing the text back keeps them.",
       ];
 
@@ -343,7 +346,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
       return descriptionBase.join("\n");
     })(),
     {
-      task_id: z.string().min(6).max(16).describe("The 6-16 character ID of the task the comment belongs to - needed to locate the comment and to upload images"),
+      task_id: z.string().min(6).max(16).describe("The 6-16 character ID of the task the comment belongs to - needed to locate the comment and to upload images and files"),
       comment_id: z.string().min(1).describe("The ID of the comment to edit, as returned by addComment or getTaskById. Only top-level comments can be edited - replies inside a thread cannot."),
       comment: z.string().min(1).describe("The new comment text, replacing the previous text completely"),
     },
@@ -366,8 +369,8 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
         // resolved and uploaded before the PUT, so a broken reference leaves the
         // existing comment untouched.
         const abortNotice = "the comment was NOT changed";
-        const { markdown, images } = await resolveImagesOrAbort(comment, abortNotice);
-        const uploaded = await uploadImagesOrAbort(task_id, images, abortNotice);
+        const { markdown, attachments } = await resolveAttachmentsOrAbort(comment, abortNotice);
+        const uploaded = await uploadAttachmentsOrAbort(task_id, attachments, abortNotice);
 
         const commentBlocks = convertMarkdownToClickUpBlocks(markdown, toAttachmentMap(uploaded));
 
@@ -399,7 +402,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
                 `created: ${timestampToIso(existing.date)} (unchanged by the edit)`,
                 `previous_text: ${existing.comment_text || '(no plain text available)'}`,
                 `new_comment: ${summarizeMarkdownForEcho(comment)}`,
-                ...formatAttachedImages(uploaded),
+                ...formatAttachedFiles(uploaded),
               ].join('\n')
             }
           ],
@@ -429,7 +432,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
         "DESCRIPTIONS: `append_description` adds a dated section below the existing text; `description` REPLACES the whole text (use it to restructure, shorten or correct a description). Pass only one of them.",
         "Before replacing, read the current description via getTaskById and carry over everything that is still needed - ClickUp keeps a description history, so a bad replacement can be restored in the UI (edits within the same minute merge into one version), but the MCP cannot undo it.",
         "STATUS UPDATES: Use the `addComment` tool for progress reports, work logs, and status updates rather than the task description.",
-        IMAGE_SUPPORT_HINT,
+        ATTACHMENT_SUPPORT_HINT,
         "Task descriptions should contain requirements, specifications, and core task information.",
         "LINKING IN DESCRIPTIONS: Include links to related tasks, lists, or external resources (format: https://app.clickup.com/t/TASK_ID).",
         "IMPORTANT: When updating tasks (especially when booking time or adding progress), ensure the status makes sense for the work being done - tasks in 'backlog' or 'closed' states usually shouldn't have active work.",
@@ -497,24 +500,24 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
         const resolvedCustomFields: ResolvedCustomField[] =
           custom_fields !== undefined ? await resolveCustomFields(taskData.list?.id, custom_fields) : [];
 
-        // Resolve and upload description images FIRST - an image problem must
+        // Resolve and upload description images and files FIRST - a problem with them must
         // abort before dependencies, tags or the task itself are touched, so the
         // caller can fix the markdown and retry the whole call cleanly.
         // `description` replaces, `append_description` appends; both go through
-        // the same image pipeline. An empty `description` is a valid request to
+        // the same attachment pipeline. An empty `description` is a valid request to
         // clear the description, so check for undefined rather than truthiness.
         const descriptionInput = description !== undefined ? description : append_description;
         let preparedDescription: string | undefined;
-        let uploadedImages: UploadedMarkdownImage[] = [];
+        let uploadedAttachments: UploadedMarkdownAttachment[] = [];
         if (descriptionInput !== undefined) {
           const abortNotice = "the task was NOT updated";
-          const prepared = await resolveImagesOrAbort(descriptionInput, abortNotice);
-          uploadedImages = await uploadImagesOrAbort(task_id, prepared.images, abortNotice);
-          // Descriptions render plain markdown, so no image fragments are involved
-          // here - the local paths are simply swapped for the CDN URLs.
+          const prepared = await resolveAttachmentsOrAbort(descriptionInput, abortNotice);
+          uploadedAttachments = await uploadAttachmentsOrAbort(task_id, prepared.attachments, abortNotice);
+          // Descriptions render plain markdown, so no fragments are involved here -
+          // the local paths are simply swapped for the CDN URLs (files become links).
           preparedDescription = rewriteMarkdownImageUrls(
             prepared.markdown,
-            toAttachmentMap(uploadedImages)
+            toAttachmentMap(uploadedAttachments)
           );
         }
 
@@ -703,7 +706,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
           responseLines.push('custom_field_warnings: ' + customFieldWarnings.join('; '));
         }
 
-        responseLines.push(...formatAttachedImages(uploadedImages));
+        responseLines.push(...formatAttachedFiles(uploadedAttachments));
 
         return {
           content: [
@@ -740,7 +743,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
         "- The response will include the new task's clickable URL - always share this link",
         "Use getListInfo first to understand the list context and available statuses.",
         "Task descriptions support full markdown formatting including **bold**, *italic*, lists, links, and code blocks.",
-        IMAGE_SUPPORT_HINT,
+        ATTACHMENT_SUPPORT_HINT,
         "BEST PRACTICE: Every task creation should result in sharing the clickable task URL for future reference."
       ];
 
@@ -773,11 +776,11 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
     },
     async ({ list_id, name, description, status, priority, due_date, start_date, time_estimate, tags, parent_task_id, assignees, custom_fields }) => {
       try {
-        // Resolve description images BEFORE creating the task: a broken reference
-        // (missing file, dead URL, non-image) must not leave a half-finished task
+        // Resolve description images and files BEFORE creating the task: a broken reference
+        // (missing file, dead URL, corrupt image) must not leave a half-finished task
         // behind. Uploading has to wait until the task exists, though - ClickUp
         // attachments always belong to a task.
-        const { markdown: normalizedDescription, images } = await resolveImagesOrAbort(
+        const { markdown: normalizedDescription, attachments } = await resolveAttachmentsOrAbort(
           description,
           "the task was NOT created"
         );
@@ -845,18 +848,18 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
           }
         }
 
-        // Images can only be attached once the task exists, so the description is
+        // Files can only be attached once the task exists, so the description is
         // written first with its original sources and then rewritten to the CDN URLs.
         // At this point every source resolved successfully - only the upload API
         // itself can still fail, and then the task already exists, so that is
         // reported as a warning instead of pretending the task was not created.
-        const imageWarnings: string[] = [];
-        const { uploaded, failure: uploadFailure } = await uploadResolvedImages(createdTask.id, images);
+        const attachmentWarnings: string[] = [];
+        const { uploaded, failure: uploadFailure } = await uploadResolvedAttachments(createdTask.id, attachments);
         if (uploadFailure) {
-          console.error(`Failed to attach image "${uploadFailure.src}": ${uploadFailure.error}`);
-          imageWarnings.push(
-            `WARNING: the task was created, but uploading image "${uploadFailure.src}" failed: ${uploadFailure.error}`,
-            `The description still references the original image source. Fix the problem and add the image via updateTask.`
+          console.error(`Failed to attach "${uploadFailure.src}": ${uploadFailure.error}`);
+          attachmentWarnings.push(
+            `WARNING: the task was created, but uploading "${uploadFailure.src}" failed: ${uploadFailure.error}`,
+            `The description still references the original source. Fix the problem and add it via updateTask.`
           );
         }
         const attachmentMap = toAttachmentMap(uploaded);
@@ -873,9 +876,9 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
             });
             if (!descriptionResponse.ok) {
               // The task itself exists - report the problem instead of failing the call.
-              console.error(`Failed to write image URLs into description: ${descriptionResponse.status}`);
-              imageWarnings.push(
-                `WARNING: description update failed (${descriptionResponse.status} ${descriptionResponse.statusText}) - the images are attached to the task but not embedded in the description`
+              console.error(`Failed to write attachment URLs into description: ${descriptionResponse.status}`);
+              attachmentWarnings.push(
+                `WARNING: description update failed (${descriptionResponse.status} ${descriptionResponse.statusText}) - the files are attached to the task but not embedded in the description`
               );
             }
           }
@@ -885,8 +888,8 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
           list_id, name, description, status, priority, due_date, start_date, time_estimate, tags, parent_task_id, assignees
         }, userData);
 
-        responseLines.push(...formatAttachedImages(uploaded));
-        responseLines.push(...imageWarnings);
+        responseLines.push(...formatAttachedFiles(uploaded));
+        responseLines.push(...attachmentWarnings);
         if (tagCreateResults.length > 0) {
           responseLines.push('tag_warnings: ' + tagCreateResults.join('; '));
         }

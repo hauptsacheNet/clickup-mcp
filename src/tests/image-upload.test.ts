@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { MockAgent, setGlobalDispatcher } from "undici";
-import { mkdtemp, writeFile } from "fs/promises";
+import { mkdtemp, symlink, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
 
@@ -136,7 +136,7 @@ test("addComment uploads a local image and embeds the full attachment object", a
     !JSON.stringify(commentBody.comment).includes(imagePath),
     "local path should be replaced by the CDN URL"
   );
-  assert.ok(result.content[0].text.includes("images_attached: 1"));
+  assert.ok(result.content[0].text.includes("files_attached: 1"));
 
   await h.close();
 });
@@ -462,6 +462,262 @@ test("updateTask uploads images and rewrites the appended description", async (t
   assert.ok(putBody.markdown_description.includes("Bestehender Text"), "existing text preserved");
   assert.ok(putBody.markdown_description.includes(CDN_URL));
   assert.ok(!putBody.markdown_description.includes(imagePath));
+
+  await h.close();
+});
+
+const XLSX_URL =
+  "https://t123.p.clickup-attachments.com/t123/fff-000/Auswertung%20M%C3%A4rz.xlsx";
+
+/** Attachment object as returned by POST /task/{id}/attachment for a spreadsheet */
+function fileAttachmentResponse(name: string, extension: string, url = XLSX_URL) {
+  return {
+    id: `fff-000.${extension}`,
+    title: name,
+    extension,
+    mimetype: "application/octet-stream",
+    url,
+    thumbnail_small: null,
+    thumbnail_medium: null,
+    thumbnail_large: null,
+  };
+}
+
+/** Like interceptUpload, but for files - also records the multipart content type */
+function interceptFileUpload(
+  h: Harness,
+  taskId: string,
+  response: ReturnType<typeof fileAttachmentResponse>,
+  seen: { filename: string | null; contentType: string | null }[]
+) {
+  h.client
+    .intercept({ path: `/api/v2/task/${taskId}/attachment`, method: "POST" })
+    .reply((opts) => {
+      const body = bodyToString(opts.body);
+      // bodyToString decodes as latin1; the multipart header itself is UTF-8
+      const rawName = body.match(/filename="([^"]*)"/)?.[1];
+      const filename = rawName ? Buffer.from(rawName, "latin1").toString("utf8") : null;
+      const contentType = body.match(/\r\nContent-Type: ([^\r\n]+)\r\n/)?.[1] ?? null;
+      seen.push({ filename, contentType });
+      h.uploads.push({ filename });
+      return { statusCode: 200, data: response };
+    });
+}
+
+function interceptComment(h: Harness, onBody: (body: any) => void) {
+  h.client
+    .intercept({ path: "/api/v2/task/task123/comment", method: "POST" })
+    .reply((opts) => {
+      onBody(JSON.parse(String(opts.body)));
+      return { statusCode: 200, data: { id: "c1", user: { username: "me" }, date: "0" } };
+    });
+}
+
+async function writeTempFile(filename: string, content: string | Buffer): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), "clickup-file-test-"));
+  const path = join(dir, filename);
+  await writeFile(path, content);
+  return path;
+}
+
+test("addComment attaches an Excel file as a file card with the full attachment object", async () => {
+  const h = await setupHarness();
+  // An .xlsx is a zip container - the content is irrelevant, only images are sniffed
+  const xlsxPath = await writeTempFile("export-2026-03.xlsx", Buffer.from("PK\u0003\u0004 fake xlsx"));
+
+  const seen: { filename: string | null; contentType: string | null }[] = [];
+  interceptFileUpload(h, "task123", fileAttachmentResponse("Auswertung März.xlsx", "xlsx"), seen);
+
+  let commentBody: any;
+  interceptComment(h, (body) => (commentBody = body));
+
+  const result = await h.tools.addComment({
+    task_id: "task123",
+    comment: `Hier die Auswertung:\n\n![Auswertung März](${xlsxPath})`,
+  });
+
+  assert.equal(seen.length, 1, "the spreadsheet should be uploaded once");
+  assert.equal(seen[0].filename, "Auswertung März.xlsx", "caption becomes the filename, extension kept");
+  assert.equal(
+    seen[0].contentType,
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "ClickUp's Office preview relies on the real spreadsheet type"
+  );
+
+  assert.ok(!commentBody.comment.some((b: any) => b.type === "image"), "a spreadsheet is no image");
+  const fragment = commentBody.comment.find((b: any) => b.type === "attachment");
+  assert.ok(fragment, "comment should contain an attachment fragment");
+  assert.equal(fragment.text, "Auswertung März.xlsx");
+  assert.equal(fragment.attachment.url, XLSX_URL);
+  assert.equal(fragment.attachment.id, "fff-000.xlsx", "the whole upload response is embedded");
+  assert.equal(fragment.attachment.extension, "xlsx");
+  assert.ok(!JSON.stringify(commentBody).includes(xlsxPath), "local path must not leak");
+  assert.ok(result.content[0].text.includes("files_attached: 1"));
+
+  await h.close();
+});
+
+test("addComment attaches a CSV data URI and does not double an extension already in the caption", async () => {
+  const h = await setupHarness();
+  const seen: { filename: string | null; contentType: string | null }[] = [];
+  interceptFileUpload(h, "task123", fileAttachmentResponse("daten.csv", "csv"), seen);
+
+  let commentBody: any;
+  interceptComment(h, (body) => (commentBody = body));
+
+  const csv = Buffer.from("id;name\n1;Anna\n2;Ben\n").toString("base64");
+  await h.tools.addComment({
+    task_id: "task123",
+    comment: `![daten.csv](data:text/csv;base64,${csv})`,
+  });
+
+  assert.equal(seen[0].filename, "daten.csv");
+  assert.equal(seen[0].contentType, "text/csv");
+  assert.ok(commentBody.comment.some((b: any) => b.type === "attachment"));
+  assert.ok(!JSON.stringify(commentBody).includes(csv), "base64 payload must not be posted");
+
+  await h.close();
+});
+
+test("addComment re-embeds an existing ClickUp file URL as a file card without uploading", async () => {
+  const h = await setupHarness();
+
+  let commentBody: any;
+  interceptComment(h, (body) => (commentBody = body));
+
+  await h.tools.addComment({
+    task_id: "task123",
+    comment: `![Auswertung März.xlsx](${XLSX_URL})`,
+  });
+
+  assert.equal(h.uploads.length, 0, "an existing attachment URL must not be uploaded again");
+  const fragment = commentBody.comment.find((b: any) => b.type === "attachment");
+  assert.ok(fragment, "existing file URL should become an attachment fragment");
+  assert.equal(fragment.attachment.url, XLSX_URL);
+  assert.equal(fragment.text, "Auswertung März.xlsx");
+  assert.equal(fragment.attachment.thumbnail_large, undefined, "a file card has no image thumbnail");
+
+  await h.close();
+});
+
+test("addComment refuses to upload credential files", async () => {
+  const h = await setupHarness();
+  const envPath = await writeTempFile(".env", "CLICKUP_API_KEY=secret");
+  const keyPath = await writeTempFile("id_rsa", "-----BEGIN OPENSSH PRIVATE KEY-----");
+
+  // Deliberately no upload or comment interceptor - any request fails the test
+  const result = await h.tools.addComment({
+    task_id: "task123",
+    comment: `![env](${envPath})\n\n![key](${keyPath})`,
+  });
+
+  assert.equal(h.uploads.length, 0);
+  const text = result.content[0].text;
+  assert.ok(text.includes("2 image/file reference(s) could not be used"), text);
+  assert.ok(text.includes("looks like a credential"), text);
+  assert.ok(text.includes("the comment was NOT posted"));
+
+  await h.close();
+});
+
+test("addComment judges the real file behind a path: no symlinked secrets, no /proc", async () => {
+  const h = await setupHarness();
+  const envPath = await writeTempFile(".env", "CLICKUP_API_KEY=secret");
+  const dir = await mkdtemp(join(tmpdir(), "clickup-file-test-"));
+  const innocentLink = join(dir, "report.csv");
+  await symlink(envPath, innocentLink);
+
+  // Deliberately no upload or comment interceptor - any request fails the test
+  const result = await h.tools.addComment({
+    task_id: "task123",
+    comment: `![Report](${innocentLink})\n\n![Env](/proc/self/environ)\n\n![Dir](${dir})`,
+  });
+
+  assert.equal(h.uploads.length, 0);
+  const text = result.content[0].text;
+  assert.ok(text.includes("3 image/file reference(s) could not be used"), text);
+  assert.ok(text.includes("looks like a credential"), "the symlink target must be checked");
+  assert.ok(text.includes("is a system file"), "/proc must be refused");
+  assert.ok(text.includes("is not a regular file"), "directories must be refused");
+  assert.ok(!text.includes("CLICKUP_API_KEY"), "no file content may leak into the error");
+
+  await h.close();
+});
+
+test("addComment accepts only images from a URL, so internal responses never reach a ticket", async () => {
+  const h = await setupHarness();
+
+  // What a prompt injection could point at: an internal service answering with data
+  h.mockAgent
+    .get("http://localhost:8080")
+    .intercept({ path: "/internal/export.csv", method: "GET" })
+    .reply(200, "id;secret\n1;abc\n", { headers: { "content-type": "text/csv" } });
+
+  // Deliberately no upload or comment interceptor - any request fails the test
+  const result = await h.tools.addComment({
+    task_id: "task123",
+    comment: `![Export](http://localhost:8080/internal/export.csv)`,
+  });
+
+  assert.equal(h.uploads.length, 0);
+  assert.ok(result.content[0].text.includes("is not an image"), result.content[0].text);
+  assert.ok(result.content[0].text.includes("the comment was NOT posted"));
+
+  await h.close();
+});
+
+test("addComment embeds image bytes under a foreign extension as an image, not a file card", async () => {
+  const h = await setupHarness();
+  // Real PNG bytes behind a name that does not say so
+  const path = await writeTempFile("photo.dat", Buffer.from(PNG_BASE64, "base64"));
+
+  interceptUpload(h, "task123", "photo.png");
+
+  let commentBody: any;
+  interceptComment(h, (body) => (commentBody = body));
+
+  await h.tools.addComment({ task_id: "task123", comment: `![](${path})` });
+
+  assert.equal(h.uploads[0].filename, "photo.png", "the extension must match the content");
+  assert.ok(commentBody.comment.some((b: any) => b.type === "image"), "should be an inline image");
+
+  await h.close();
+});
+
+test("updateTask links a non-image file in the description instead of embedding it as an image", async () => {
+  const h = await setupHarness();
+  const csvPath = await writeTempFile("export.csv", "a;b\n1;2\n");
+
+  h.client
+    .intercept({ path: "/api/v2/task/task123?include_markdown_description=true", method: "GET" })
+    .reply(200, { id: "task123", name: "Task", markdown_description: "Bestehender Text" });
+
+  const seen: { filename: string | null; contentType: string | null }[] = [];
+  const csvUrl = "https://t123.p.clickup-attachments.com/t123/ccc/Rohdaten.csv";
+  interceptFileUpload(h, "task123", fileAttachmentResponse("Rohdaten.csv", "csv", csvUrl), seen);
+
+  let putBody: any;
+  h.client
+    .intercept({ path: "/api/v2/task/task123", method: "PUT" })
+    .reply((opts) => {
+      putBody = JSON.parse(String(opts.body));
+      return { statusCode: 200, data: { id: "task123", name: "Task" } };
+    });
+
+  h.client
+    .intercept({ path: "/api/v2/user", method: "GET" })
+    .reply(200, { user: { id: "u1", username: "me" } })
+    .times(2);
+
+  await h.tools.updateTask({
+    task_id: "task123",
+    append_description: `Daten:\n\n![Rohdaten](${csvPath})`,
+  });
+
+  assert.equal(seen[0].filename, "Rohdaten.csv");
+  assert.ok(putBody.markdown_description.includes(`[Rohdaten](${csvUrl})`), putBody.markdown_description);
+  assert.ok(!putBody.markdown_description.includes(`![Rohdaten]`), "a CSV must not become a broken image");
+  assert.ok(!putBody.markdown_description.includes(csvPath));
 
   await h.close();
 });

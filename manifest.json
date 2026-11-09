@@ -3,7 +3,7 @@
   "name": "@hauptsache.net/clickup-mcp",
   "display_name": "ClickUp",
   "icon": "icon-72x72.png",
-  "version": "1.9.0",
+  "version": "1.10.0",
   "description": "Search, create, and retrieve tasks and documents, add comments, and track time through natural language commands.",
   "author": {
     "name": "Marco Pfeiffer",
@@ -36,19 +36,19 @@
     },
     {
       "name": "addComment",
-      "description": "Add a comment to a specific task, or reply inside an existing comment thread via parent_comment_id. Images written as markdown (local file paths, data URIs or URLs) are uploaded and embedded automatically."
+      "description": "Add a comment to a specific task, or reply inside an existing comment thread via parent_comment_id. Images and files (e.g. Excel or CSV exports) written as markdown - local file paths, data URIs or URLs - are uploaded and embedded automatically; files appear as file cards."
     },
     {
       "name": "editComment",
-      "description": "Replace the text of an own task comment within a configurable time window (default 24 hours) instead of posting a follow-up comment. Formatting and images are preserved; comments by other users and older comments are refused."
+      "description": "Replace the text of an own task comment within a configurable time window (default 24 hours) instead of posting a follow-up comment. Formatting, images and file attachments are preserved; comments by other users and older comments are refused."
     },
     {
       "name": "updateTask",
-      "description": "Update various aspects of an existing task including name, description (append a dated section or replace the whole text), status, priority, dates, tags, assignees, and parent relationships. Images in the description are uploaded and embedded automatically. Custom fields can be set by name or id - run getListCustomFields first."
+      "description": "Update various aspects of an existing task including name, description (append a dated section or replace the whole text), status, priority, dates, tags, assignees, and parent relationships. Images and files in the description are uploaded automatically (files become links). Custom fields can be set by name or id - run getListCustomFields first."
     },
     {
       "name": "createTask",
-      "description": "Create a new task in a specific list with full markdown support, assignment to users, and automatic linking to related tasks. Images in the description are uploaded and embedded automatically. Custom fields can be set by name or id - run getListCustomFields first."
+      "description": "Create a new task in a specific list with full markdown support, assignment to users, and automatic linking to related tasks. Images and files in the description are uploaded automatically (files become links). Custom fields can be set by name or id - run getListCustomFields first."
     },
     {
       "name": "searchTasks",
@@ -121,8 +121,8 @@
     },
     "max_upload_size_mb": {
       "type": "number",
-      "title": "Max Image Upload Size (MB)",
-      "description": "Upper bound for a single image uploaded to a comment or task description.",
+      "title": "Max Upload Size (MB)",
+      "description": "Upper bound for a single image or file uploaded to a comment or task description.",
       "required": false,
       "default": 10,
       "min": 1

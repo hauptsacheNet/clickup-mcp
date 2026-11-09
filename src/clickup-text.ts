@@ -8,7 +8,7 @@ import remarkGfm from 'remark-gfm';
 import type { Root, PhrasingContent, Link, Text, Content, Heading, Paragraph, Blockquote, List, ListItem, Code, Table, TableRow, TableCell } from 'mdast';
 
 /**
- * Represents a ClickUp text item which can be plain text or an image
+ * Represents a ClickUp text item which can be plain text, an image or a file attachment
  */
 export interface ClickUpTextItem {
   text?: string;
@@ -27,6 +27,14 @@ export interface ClickUpTextItem {
     thumbnail_small?: string;
     url: string;
     uploaded?: boolean;
+  };
+  /** Present on `type: "attachment"` fragments - a non-image file shown as a file card */
+  attachment?: {
+    id?: string;
+    title?: string;
+    name?: string;
+    extension?: string;
+    url: string;
   };
   attributes?: any;
 }
@@ -75,10 +83,14 @@ function extractThumbnailsFromDataAttachment(attributes?: any): {
  * comment it just read straight back into editComment without losing the images.
  */
 function toMarkdownImage(alt: string, url: string): string {
-  const safeAlt = alt.replace(/[\[\]\r\n]/g, " ").trim();
+  return `!${toMarkdownLink(alt, url)}`;
+}
+
+function toMarkdownLink(text: string, url: string): string {
+  const safeText = text.replace(/[\[\]\r\n]/g, " ").trim();
   // Angle brackets let a URL with spaces or parentheses survive the round trip
   const safeUrl = /[\s()]/.test(url) ? `<${url}>` : url;
-  return `![${safeAlt}](${safeUrl})`;
+  return `[${safeText}](${safeUrl})`;
 }
 
 /**
@@ -192,7 +204,7 @@ export async function convertClickUpTextItemsToToolCallResult(
       // If no thumbnails, just treat as a file reference (already added to currentTextBlock)
     }
     // Handle text items
-    else if (typeof item.text === "string") {
+    else if (typeof item.text === "string" && item.type !== "attachment") {
       // Check if this is a newline with block formatting (header, blockquote, list)
       if (item.text === '\n' && item.attributes) {
         // Code block formatting: append this line to the open fence (or open one).
@@ -322,6 +334,12 @@ export async function convertClickUpTextItemsToToolCallResult(
       } else {
         currentLine += formattedText;
       }
+    }
+    // File cards (spreadsheets, PDFs, ...) use the same embed syntax as images, so
+    // the comment can be handed back to editComment and keep its attachments.
+    else if (item.type === "attachment" && item.attachment?.url) {
+      const fileName = item.attachment.title || item.attachment.name || item.text || "file";
+      currentLine += toMarkdownImage(fileName, item.attachment.url);
     }
     // Task mentions render as the task URL so the reference survives the round trip:
     // writing that URL back through addComment/editComment regenerates the mention.
@@ -578,10 +596,15 @@ export interface ClickUpCommentBlock {
     width?: number;
     height?: number;
   };
+  /**
+   * Present on file fragments (`type: "attachment"`). Like images, ClickUp needs the
+   * attachment object from the upload response to render the file card.
+   */
+  attachment?: EmbeddableAttachment;
 }
 
 /**
- * Minimal shape needed to embed an already-uploaded attachment as an image fragment
+ * Minimal shape needed to embed an already-uploaded attachment as an image or file fragment
  */
 export interface EmbeddableAttachment {
   id?: string;
@@ -595,6 +618,36 @@ export interface EmbeddableAttachment {
   width?: number;
   height?: number;
   [key: string]: any;
+}
+
+/** Extensions ClickUp renders inline as an image - everything else becomes a file card */
+export const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp"]);
+
+/**
+ * Whether an uploaded attachment should be embedded as an inline image.
+ * Decided by extension rather than mime type: an SVG is `image/*` but ClickUp
+ * does not render it inline, so it belongs on a file card.
+ */
+export function isImageAttachment(attachment: EmbeddableAttachment): boolean {
+  const extension =
+    attachment.extension ||
+    (attachment.name || attachment.title || attachment.url).split(/[?#]/)[0].split('.').pop() ||
+    '';
+  return IMAGE_EXTENSIONS.has(extension.toLowerCase());
+}
+
+/**
+ * Build the file fragment ClickUp renders as a file card (spreadsheets, PDFs, ...).
+ * The card shows the attachment's filename, which the upload already derived from
+ * the caption, so the fragment text simply mirrors it - as the ClickUp UI does.
+ */
+export function buildAttachmentFragment(attachment: EmbeddableAttachment): ClickUpCommentBlock {
+  const label = attachment.title || attachment.name || 'file';
+  return {
+    type: 'attachment',
+    text: label,
+    attachment: { ...attachment, title: label },
+  };
 }
 
 /**
@@ -712,7 +765,8 @@ export function collectMarkdownImageSources(markdown: string): { src: string; al
  *
  * Used for task descriptions: `markdown_description` renders `![alt](url)` directly,
  * so descriptions need no fragment handling - only the URL has to be swapped.
- * Images without an upload keep their original source untouched.
+ * Non-image files become a plain link, since an image tag pointing at a spreadsheet
+ * renders as a broken image. Sources without an upload stay untouched.
  */
 export function rewriteMarkdownImageUrls(
   markdown: string,
@@ -729,6 +783,9 @@ export function rewriteMarkdownImageUrls(
       const attachment = attachmentsBySrc.get(src);
       if (!attachment) {
         return match;
+      }
+      if (!isImageAttachment(attachment)) {
+        return toMarkdownLink(alt || attachment.title || attachment.name || 'file', attachment.url);
       }
       return `![${alt}](${attachment.url}${trailing})`;
     }
@@ -1025,7 +1082,11 @@ function walkPhrasingContent(
         const attachment = attachmentsBySrc?.get(node.url);
         const caption = node.alt || '';
         if (attachment) {
-          blocks.push(buildImageFragment(attachment, caption));
+          blocks.push(
+            isImageAttachment(attachment)
+              ? buildImageFragment(attachment, caption)
+              : buildAttachmentFragment(attachment)
+          );
         } else {
           // Nothing was uploaded for this source - degrade to a link rather than
           // dropping the reference, so the information survives.
