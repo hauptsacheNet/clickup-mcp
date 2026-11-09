@@ -31,6 +31,7 @@ import {
   resolveCustomFields,
   writeCustomFieldsToTask,
 } from "../shared/custom-fields";
+import { customItemSchema, describeCustomItem, resolveCustomItemId } from "../shared/task-types";
 
 /**
  * Shared wording for what markdown ClickUp comments can actually render.
@@ -471,7 +472,8 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
       waiting_on: z.array(z.string()).optional().describe("Optional array of task IDs that this task should wait on (will replace existing waiting_on relationships)"),
       blocking: z.array(z.string()).optional().describe("Optional array of task IDs that this task should block. Note: This creates dependencies FROM those tasks TO this task (those tasks will wait on this one)"),
       linked_tasks: z.array(z.string()).optional().describe("Optional array of task IDs to link as related tasks without blocking (will replace existing linked tasks)"),
-      custom_fields: customFieldsSchema
+      custom_fields: customFieldsSchema,
+      custom_item_id: customItemSchema
     },
     {
       readOnlyHint: false,
@@ -479,7 +481,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
       idempotentHint: false,
       openWorldHint: true
     },
-    async ({ task_id: requestedTaskId, name, description, append_description, status, priority, due_date, start_date, time_estimate, tags, parent_task_id: requestedParentId, assignees, blocking: requestedBlocking, waiting_on: requestedWaitingOn, linked_tasks: requestedLinked, custom_fields }) => {
+    async ({ task_id: requestedTaskId, name, description, append_description, status, priority, due_date, start_date, time_estimate, tags, parent_task_id: requestedParentId, assignees, blocking: requestedBlocking, waiting_on: requestedWaitingOn, linked_tasks: requestedLinked, custom_fields, custom_item_id }) => {
       try {
 
         // A Custom Task ID (e.g. ENG-302) is resolved to the generated ID up front.
@@ -518,6 +520,8 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
         // that owns the field definitions is the one the task currently lives in.
         const resolvedCustomFields: ResolvedCustomField[] =
           custom_fields !== undefined ? await resolveCustomFields(taskData.list?.id, custom_fields) : [];
+        // The task type is validated up front too - an unknown name aborts the update.
+        const resolvedCustomItemId = await resolveCustomItemId(custom_item_id);
 
         // Resolve and upload description images and files FIRST - a problem with them must
         // abort before dependencies, tags or the task itself are touched, so the
@@ -638,6 +642,10 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
           updateBody.assignees = { add: assignees, rem: [] }; // Add new assignees, remove none
         }
 
+        if (resolvedCustomItemId !== undefined) {
+          updateBody.custom_item_id = resolvedCustomItemId;
+        }
+
         // Check if there's anything to update (including tags, dependencies and
         // custom fields which are handled separately)
         if (Object.keys(updateBody).length === 0 && tags === undefined && blocking === undefined && waiting_on === undefined && linked_tasks === undefined && custom_fields === undefined) {
@@ -692,7 +700,8 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
         }
 
         const responseLines = formatTaskResponse(updatedTask, 'updated', {
-          name, description, append_description, status, priority, due_date, start_date, time_estimate, tags, parent_task_id, assignees, blocking, waiting_on, linked_tasks
+          name, description, append_description, status, priority, due_date, start_date, time_estimate, tags, parent_task_id, assignees, blocking, waiting_on, linked_tasks,
+          task_type: resolvedCustomItemId !== undefined ? await describeCustomItem(resolvedCustomItemId) : undefined
         }, userData);
 
         if (refreshWarning) {
@@ -785,7 +794,8 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
       tags: taskTagsSchema,
       parent_task_id: z.string().optional().describe("Optional parent task ID (or Custom Task ID such as ENG-302) to create this as a subtask"),
       assignees: z.array(z.string()).optional().describe(createAssigneeDescription(userData)),
-      custom_fields: customFieldsSchema
+      custom_fields: customFieldsSchema,
+      custom_item_id: customItemSchema
     },
     {
       readOnlyHint: false,
@@ -793,7 +803,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
       idempotentHint: false,
       openWorldHint: true
     },
-    async ({ list_id, name, description, status, priority, due_date, start_date, time_estimate, tags, parent_task_id: requestedParentId, assignees, custom_fields }) => {
+    async ({ list_id, name, description, status, priority, due_date, start_date, time_estimate, tags, parent_task_id: requestedParentId, assignees, custom_fields, custom_item_id }) => {
       try {
         // The parent may be given as a Custom Task ID (e.g. ENG-302).
         const parent_task_id = requestedParentId ? await resolveTaskId(requestedParentId) : undefined;
@@ -810,6 +820,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
         // Resolve custom fields before creating anything: an unknown field or
         // option must abort with no task left behind.
         const resolvedCustomFields: ResolvedCustomField[] = await resolveCustomFields(list_id, custom_fields);
+        const resolvedCustomItemId = await resolveCustomItemId(custom_item_id);
 
         const userData = await getCurrentUser();
         const currentUserId = userData.user.id;
@@ -827,6 +838,9 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
         // their API-ready values (drop_down -> option id, users -> user ids, ...).
         if (resolvedCustomFields.length > 0) {
           requestBody.custom_fields = buildCreateCustomFieldsBody(resolvedCustomFields);
+        }
+        if (resolvedCustomItemId !== undefined) {
+          requestBody.custom_item_id = resolvedCustomItemId;
         }
 
         const response = await fetch(`https://api.clickup.com/api/v2/list/${list_id}/task`, {
@@ -907,7 +921,8 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
         }
 
         const responseLines = formatTaskResponse(createdTask, 'created', {
-          list_id, name, description, status, priority, due_date, start_date, time_estimate, tags, parent_task_id, assignees
+          list_id, name, description, status, priority, due_date, start_date, time_estimate, tags, parent_task_id, assignees,
+          task_type: resolvedCustomItemId !== undefined ? await describeCustomItem(resolvedCustomItemId) : undefined
         }, userData);
 
         responseLines.push(...formatAttachedFiles(uploaded));
@@ -1312,6 +1327,10 @@ function formatTaskResponse(task: any, operation: 'created' | 'updated', params:
 
   if (params.linked_tasks !== undefined && params.linked_tasks.length > 0) {
     responseLines.push(`linked_tasks: ${params.linked_tasks.join(', ')}`);
+  }
+
+  if (params.task_type !== undefined) {
+    responseLines.push(`task_type: ${params.task_type}`);
   }
 
   return responseLines;
