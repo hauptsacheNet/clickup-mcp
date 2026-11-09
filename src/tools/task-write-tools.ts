@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { CONFIG } from "../shared/config";
 import { getCurrentUser } from "../shared/utils";
+import { TASK_ID_FORMAT_HINT, resolveTaskId, resolveTaskIds, taskIdSchema } from "../shared/task-ids";
 import {
   collectMarkdownImageSources,
   convertMarkdownToClickUpBlocks,
@@ -221,7 +222,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
       return descriptionBase.join("\n");
     })(),
     {
-      task_id: z.string().min(6).max(16).describe("The 6-16 character task ID to comment on"),
+      task_id: taskIdSchema(`The task to comment on: ${TASK_ID_FORMAT_HINT}`),
       comment: z.string().min(1).describe("The comment text to add to the task"),
       parent_comment_id: z.string().min(1).optional().describe(
         "Optional: reply inside an existing comment thread instead of posting a new top-level comment. Pass the comment_id of a TOP-LEVEL comment as returned by getTaskById or addComment - ClickUp threads are one level deep, so a reply cannot have replies of its own."
@@ -232,8 +233,12 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
       destructiveHint: false,
       idempotentHint: false,
     },
-    async ({ task_id, comment, parent_comment_id }) => {
+    async ({ task_id: requestedTaskId, comment, parent_comment_id }) => {
       try {
+
+        // A Custom Task ID (e.g. ENG-302) is resolved to the generated ID up front.
+        const task_id = await resolveTaskId(requestedTaskId);
+
         // The reply endpoint anchors the reply to the parent comment's task and
         // ignores task_id, while images and files below are uploaded to task_id - so the
         // parent must verifiably be a top-level comment of THIS task before
@@ -346,7 +351,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
       return descriptionBase.join("\n");
     })(),
     {
-      task_id: z.string().min(6).max(16).describe("The 6-16 character ID of the task the comment belongs to - needed to locate the comment and to upload images and files"),
+      task_id: taskIdSchema(`The task the comment belongs to - needed to locate the comment and to upload images and files: ${TASK_ID_FORMAT_HINT}`),
       comment_id: z.string().min(1).describe("The ID of the comment to edit, as returned by addComment or getTaskById. Only top-level comments can be edited - replies inside a thread cannot."),
       comment: z.string().min(1).describe("The new comment text, replacing the previous text completely"),
     },
@@ -355,8 +360,12 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
       destructiveHint: true,
       idempotentHint: true,
     },
-    async ({ task_id, comment_id, comment }) => {
+    async ({ task_id: requestedTaskId, comment_id, comment }) => {
       try {
+
+        // A Custom Task ID (e.g. ENG-302) is resolved to the generated ID up front.
+        const task_id = await resolveTaskId(requestedTaskId);
+
         const [existing, userData] = await Promise.all([
           findTaskComment(task_id, comment_id),
           getCurrentUser(),
@@ -447,7 +456,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
       return descriptionBase.join("\n");
     })(),
     {
-      task_id: z.string().min(6).max(16).describe("The 6-16 character task ID to update"),
+      task_id: taskIdSchema(`The task to update: ${TASK_ID_FORMAT_HINT}`),
       name: taskNameSchema.optional(),
       description: z.string().optional().describe("Optional markdown that REPLACES the entire task description. Read the current description first (getTaskById) and repeat everything worth keeping - nothing is merged. Cannot be combined with append_description."),
       append_description: z.string().optional().describe("Optional markdown content to APPEND below the existing task description as a dated `**Edit (YYYY-MM-DD):**` section (existing content is preserved). Cannot be combined with description."),
@@ -457,7 +466,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
       start_date: taskStartDateSchema,
       time_estimate: taskTimeEstimateSchema,
       tags: taskTagsSchema.describe("Optional array of tag names (will replace existing tags)"),
-      parent_task_id: z.string().optional().describe("Optional parent task ID to change parent/child relationships"),
+      parent_task_id: z.string().optional().describe("Optional parent task ID (or Custom Task ID such as ENG-302) to change parent/child relationships"),
       assignees: z.array(z.string()).optional().describe(createAssigneeDescription(userData)),
       waiting_on: z.array(z.string()).optional().describe("Optional array of task IDs that this task should wait on (will replace existing waiting_on relationships)"),
       blocking: z.array(z.string()).optional().describe("Optional array of task IDs that this task should block. Note: This creates dependencies FROM those tasks TO this task (those tasks will wait on this one)"),
@@ -470,8 +479,18 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
       idempotentHint: false,
       openWorldHint: true
     },
-    async ({ task_id, name, description, append_description, status, priority, due_date, start_date, time_estimate, tags, parent_task_id, assignees, blocking, waiting_on, linked_tasks, custom_fields }) => {
+    async ({ task_id: requestedTaskId, name, description, append_description, status, priority, due_date, start_date, time_estimate, tags, parent_task_id: requestedParentId, assignees, blocking: requestedBlocking, waiting_on: requestedWaitingOn, linked_tasks: requestedLinked, custom_fields }) => {
       try {
+
+        // A Custom Task ID (e.g. ENG-302) is resolved to the generated ID up front.
+        const task_id = await resolveTaskId(requestedTaskId);
+        const parent_task_id = requestedParentId ? await resolveTaskId(requestedParentId) : requestedParentId;
+        const [blocking, waiting_on, linked_tasks] = await Promise.all([
+          resolveTaskIds(requestedBlocking),
+          resolveTaskIds(requestedWaitingOn),
+          resolveTaskIds(requestedLinked),
+        ]);
+
         if (description !== undefined && append_description !== undefined) {
           return {
             content: [{
@@ -764,7 +783,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
       start_date: taskStartDateSchema,
       time_estimate: taskTimeEstimateSchema,
       tags: taskTagsSchema,
-      parent_task_id: z.string().optional().describe("Optional parent task ID to create this as a subtask"),
+      parent_task_id: z.string().optional().describe("Optional parent task ID (or Custom Task ID such as ENG-302) to create this as a subtask"),
       assignees: z.array(z.string()).optional().describe(createAssigneeDescription(userData)),
       custom_fields: customFieldsSchema
     },
@@ -774,8 +793,11 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
       idempotentHint: false,
       openWorldHint: true
     },
-    async ({ list_id, name, description, status, priority, due_date, start_date, time_estimate, tags, parent_task_id, assignees, custom_fields }) => {
+    async ({ list_id, name, description, status, priority, due_date, start_date, time_estimate, tags, parent_task_id: requestedParentId, assignees, custom_fields }) => {
       try {
+        // The parent may be given as a Custom Task ID (e.g. ENG-302).
+        const parent_task_id = requestedParentId ? await resolveTaskId(requestedParentId) : undefined;
+
         // Resolve description images and files BEFORE creating the task: a broken reference
         // (missing file, dead URL, corrupt image) must not leave a half-finished task
         // behind. Uploading has to wait until the task exists, though - ClickUp

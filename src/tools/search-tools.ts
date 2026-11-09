@@ -1,6 +1,7 @@
 import {McpServer} from "@modelcontextprotocol/sdk/server/mcp.js";
 import {z} from "zod";
 import {CONFIG} from "../shared/config";
+import {isCustomTaskId} from "../shared/task-ids";
 import {isTaskId, getTaskSearchIndex, performMultiTermSearch} from "../shared/utils";
 import {generateTaskMetadata} from "./task-tools";
 
@@ -119,7 +120,7 @@ export function registerSearchTools(server: McpServer, userData: any) {
       });
 
       // Task ID Fallback Logic
-      const potentialTaskIds = terms.filter(isTaskId);
+      const potentialTaskIds = terms.filter(term => isTaskId(term) || isCustomTaskId(term));
       const foundTaskIdsByFuse = new Set(Array.from(uniqueResults.keys()).map(id => id.toLowerCase()));
 
       const taskIdsToFetchDirectly = potentialTaskIds.filter(id => {
@@ -131,8 +132,12 @@ export function registerSearchTools(server: McpServer, userData: any) {
         console.error(`Attempting direct fetch for task IDs: ${taskIdsToFetchDirectly.join(', ')}`);
         const directFetchPromises = taskIdsToFetchDirectly.map(async (id) => {
           try {
+            // Custom Task IDs (e.g. ENG-302) are addressed via custom_task_ids + team_id.
+            const query = isCustomTaskId(id)
+              ? `?${new URLSearchParams({custom_task_ids: 'true', team_id: CONFIG.teamId})}`
+              : '';
             const response = await fetch(
-              `https://api.clickup.com/api/v2/task/${id}`,
+              `https://api.clickup.com/api/v2/task/${encodeURIComponent(id)}${query}`,
               {headers: {Authorization: CONFIG.apiKey}}
             );
             if (response.ok) {
