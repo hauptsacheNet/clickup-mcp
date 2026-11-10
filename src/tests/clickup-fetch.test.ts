@@ -118,7 +118,12 @@ test("429 then success: waits for Retry-After, retries, and logs exactly one lin
   reset(t);
   t.mock.timers.enable({ apis: ["setTimeout", "Date"] });
   const errors: string[] = [];
-  t.mock.method(console, "error", (...args: unknown[]) => errors.push(args.join(" ")));
+  // Node 20 also prints "MockTimers API is an experimental feature" through console.error
+  // the first time mock timers are used, so only our own lines are collected.
+  t.mock.method(console, "error", (...args: unknown[]) => {
+    const line = args.join(" ");
+    if (!line.includes("ExperimentalWarning")) errors.push(line);
+  });
   let calls = 0;
   globalThis.fetch = (async () => {
     calls++;
