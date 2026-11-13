@@ -18,6 +18,8 @@ jobs:
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
+
+      - run: corepack enable  # honour packageManager (npm 11, min-release-age)
         with:
           node-version: '20'
           cache: 'npm'
