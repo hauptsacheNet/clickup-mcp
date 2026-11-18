@@ -201,7 +201,7 @@ The ClickUp MCP supports three operational modes to balance functionality, secur
 | `createTimeEntry`      |      ❌       |  ❌   |   ✅   | Log time entries for task tracking                                                      |
 | `readDocument`         |      ❌       |  ✅   |   ✅   | Get document details, page structure, and content with navigation                       |
 | `searchDocuments`      |      ❌       |  ✅   |   ✅   | Search documents by name and space with fuzzy matching and space filtering              |
-| `updateDocumentPage`   |      ❌       |  ❌   |   ✅   | Update existing page content or name with replace/append modes                          |
+| `updateDocumentPage`   |      ❌       |  ❌   |   ✅   | Update existing page content or name with replace/append/prepend modes                  |
 | `createDocumentOrPage` |      ❌       |  ❌   |   ✅   | Create new documents with first page, or add pages/sub-pages to existing documents      |
 
 ### Setting the Mode

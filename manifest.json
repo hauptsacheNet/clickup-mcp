@@ -84,7 +84,7 @@
     },
     {
       "name": "updateDocumentPage",
-      "description": "Update an existing document page's content and/or name. Requires both doc_id and page_id from readDocument. Supports append mode to add content without overwriting."
+      "description": "Update an existing document page's content and/or name. Requires both doc_id and page_id from readDocument. Supports append mode (add at the end) and prepend mode (add at the top) to add content without overwriting."
     },
     {
       "name": "createDocumentOrPage",

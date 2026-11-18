@@ -212,7 +212,7 @@ export function registerDocumentToolsWrite(server: McpServer) {
     [
       "Updates an existing document page's content and/or name.",
       "Use this when you have both doc_id and page_id from readDocument.",
-      "Content is in markdown format and can be replaced or appended.",
+      "Content is in markdown format and can be replaced, appended or prepended.",
       "Always reference documents by their URLs when sharing with users."
     ].join("\n"),
     {
@@ -235,15 +235,28 @@ export function registerDocumentToolsWrite(server: McpServer) {
       append: z
         .boolean()
         .optional()
-        .describe("Whether to append content to existing page content (default: false - replaces content)")
+        .describe("Whether to append content to existing page content (default: false - replaces content)"),
+      prepend: z
+        .boolean()
+        .optional()
+        .describe("Whether to insert content before existing page content (default: false). Cannot be combined with append")
     },
     {
       readOnlyHint: false,
       destructiveHint: true,
       idempotentHint: false,
     },
-    async ({ doc_id, page_id, name, content, append = false }) => {
+    async ({ doc_id, page_id, name, content, append = false, prepend = false }) => {
       try {
+        if (append && prepend) {
+          return {
+            content: [{
+              type: "text",
+              text: "Error: Use either 'append' or 'prepend', not both."
+            }],
+          };
+        }
+
         const requestBody: any = {};
 
         if (name) {
@@ -252,7 +265,7 @@ export function registerDocumentToolsWrite(server: McpServer) {
 
         if (content !== undefined) {
           requestBody.content = content;
-          requestBody.content_edit_mode = append ? 'append' : 'replace';
+          requestBody.content_edit_mode = prepend ? 'prepend' : (append ? 'append' : 'replace');
         }
 
         if (Object.keys(requestBody).length === 0) {
