@@ -1,0 +1,66 @@
+name: kratos
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  kratos:
+    runs-on: ubuntu-latest
+    env:
+      BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - uses: oven-sh/setup-bun@v2
+      - name: Docs-only scope
+        id: scope
+        run: |
+          changed="$(git diff --name-only "$BASE_SHA" HEAD)"
+          if grep -qx 'UPSTREAM-PATCHES.md' <<< "$changed" || grep -qvE '\.md$' <<< "$changed"; then
+            echo 'run=true' >> "$GITHUB_OUTPUT"
+          else
+            status=$?
+            if (( status != 1 )); then exit "$status"; fi
+            echo 'run=false' >> "$GITHUB_OUTPUT"
+            echo 'Docs-only change: checks skipped'
+          fi
+      - name: Install dependencies
+        if: steps.scope.outputs.run == 'true'
+        run: npm ci
+      - name: Checks fixtures
+        if: steps.scope.outputs.run == 'true'
+        run: bun test ./.github/scripts/__tests__
+      - name: Upstream tests
+        if: steps.scope.outputs.run == 'true'
+        run: bun .github/scripts/upstream-tests.ts
+      - name: Our tests
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          if test -d src/kratos; then
+            mapfile -t tests < <(find src/kratos -type f -name '*.test.ts' | sort)
+            if (( ${#tests[@]} )); then node --test -r ts-node/register -r ./src/tests/setup.ts "${tests[@]}"; fi
+          else
+            echo 'src/kratos does not exist yet: skipped'
+          fi
+      - name: Typecheck
+        if: steps.scope.outputs.run == 'true'
+        run: npx tsc --noEmit
+      - name: Comment length
+        if: steps.scope.outputs.run == 'true'
+        run: bun .github/scripts/comment-length/cli.ts "$BASE_SHA...HEAD"
+      - name: PR size
+        if: steps.scope.outputs.run == 'true'
+        run: bun .github/scripts/pr-size.ts --range "$BASE_SHA...HEAD"
+      - name: Ledger rows
+        if: steps.scope.outputs.run == 'true' && github.event_name == 'pull_request' && github.head_ref != 'upstream-main'
+        run: bun .github/scripts/pr-size.ts --range "$BASE_SHA...HEAD" --ledger
+      - name: File size
+        if: steps.scope.outputs.run == 'true'
+        run: bun .github/scripts/file-size.ts
