@@ -73,7 +73,7 @@ A comment says why, in one line by default. The code says what; history belongs 
 | `upward` | `src/kratos/clickup-api/x.ts` imports a feature |
 | `outside-module` | a feature file sits directly in `src/kratos/` |
 
-Today's known violations sit in `.github/scripts/architecture/baseline.json`, each with a reason. A violation not in the baseline fails the check; a baseline entry that no longer occurs is printed as stale and should be removed. Adding an entry needs its reason in the PR.
+Known violations sit in `.github/scripts/architecture/baseline.json`, each with a reason; today it is empty. A violation not in the baseline fails the check; a baseline entry that no longer occurs is printed as stale and should be removed. Adding an entry needs its reason in the PR.
 
 The job runs on every PR and every push to `main`, docs-only PRs included, so it is green rather than skipped and can be a required check. Run it locally with:
 
