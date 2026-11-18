@@ -469,6 +469,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
       tags: taskTagsSchema.describe("Optional array of tag names (will replace existing tags)"),
       parent_task_id: z.string().optional().describe("Optional parent task ID (or Custom Task ID such as ENG-302) to change parent/child relationships"),
       assignees: z.array(z.string()).optional().describe(createAssigneeDescription(userData)),
+      remove_assignees: z.array(z.string()).optional().describe("Optional array of user IDs to remove from the task's assignees"),
       waiting_on: z.array(z.string()).optional().describe("Optional array of task IDs that this task should wait on (will replace existing waiting_on relationships)"),
       blocking: z.array(z.string()).optional().describe("Optional array of task IDs that this task should block. Note: This creates dependencies FROM those tasks TO this task (those tasks will wait on this one)"),
       linked_tasks: z.array(z.string()).optional().describe("Optional array of task IDs to link as related tasks without blocking (will replace existing linked tasks)"),
@@ -481,7 +482,7 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
       idempotentHint: false,
       openWorldHint: true
     },
-    async ({ task_id: requestedTaskId, name, description, append_description, status, priority, due_date, start_date, time_estimate, tags, parent_task_id: requestedParentId, assignees, blocking: requestedBlocking, waiting_on: requestedWaitingOn, linked_tasks: requestedLinked, custom_fields, custom_item_id }) => {
+    async ({ task_id: requestedTaskId, name, description, append_description, status, priority, due_date, start_date, time_estimate, tags, parent_task_id: requestedParentId, assignees, remove_assignees, blocking: requestedBlocking, waiting_on: requestedWaitingOn, linked_tasks: requestedLinked, custom_fields, custom_item_id }) => {
       try {
 
         // A Custom Task ID (e.g. ENG-302) is resolved to the generated ID up front.
@@ -627,8 +628,8 @@ export function registerTaskToolsWrite(server: McpServer, userData: any) {
         }
 
         // Handle assignees for updates (different from creates)
-        if (assignees !== undefined) {
-          updateBody.assignees = { add: assignees, rem: [] }; // Add new assignees, remove none
+        if (assignees !== undefined || remove_assignees !== undefined) {
+          updateBody.assignees = { add: assignees ?? [], rem: remove_assignees ?? [] };
         }
 
         if (resolvedCustomItemId !== undefined) {
