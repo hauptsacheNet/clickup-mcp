@@ -63,7 +63,8 @@ export function registerListByStatusTool(server: McpServer) {
       page: z.number().int().min(0).default(0).describe("Page number, starting at 0"),
     },
     { readOnlyHint: true },
-    async ({ list_id, statuses, page }) => {
+    // Defaults repeated here because the upstream CLI calls handlers without schema parsing.
+    async ({ list_id, statuses = [], page = 0 }) => {
       try {
         const result = await fetchTasksByStatus(list_id, statuses, page);
         return { content: [{ type: "text" as const, text: formatTaskPage(list_id, statuses, page, result) }] };
