@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { CONFIG } from "../shared/config";
-import { CLICKUP_API_BASE, CLICKUP_TASK_PAGE_SIZE, LIST_TASKS_BY_STATUS_TOOL } from "./settings";
+import { CONFIG } from "../../shared/config";
+import { CLICKUP_API_BASE, CLICKUP_TASK_PAGE_SIZE, LIST_TASKS_BY_STATUS_TOOL } from "../settings";
 
 export type TaskPage = { tasks: any[]; nextPage?: number };
 
