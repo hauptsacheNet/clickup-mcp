@@ -14,6 +14,7 @@ import { registerListToolsRead, registerListToolsWrite } from "./tools/list-tool
 import { registerTimeToolsRead, registerTimeToolsWrite } from "./tools/time-tools";
 import { registerDocumentToolsRead, registerDocumentToolsWrite } from "./tools/doc-tools";
 import { registerSpaceResources } from "./resources/space-resources";
+import { registerKratosToolsRead, registerKratosToolsWrite } from "./kratos";
 
 // Create server variable that will be initialized later
 let server: McpServer;
@@ -103,6 +104,7 @@ Use the ClickUp search tools to find tasks assigned to me, and get detailed info
     // Only getTaskById and searchTasks
     registerTaskToolsRead(server, userData);
     registerSearchTools(server, userData);
+    registerKratosToolsRead(server);
   } else if (CONFIG.mode === 'read') {
     // All read-only tools
     registerTaskToolsRead(server, userData);
@@ -112,6 +114,7 @@ Use the ClickUp search tools to find tasks assigned to me, and get detailed info
     registerListToolsRead(server);
     registerTimeToolsRead(server);
     registerDocumentToolsRead(server);
+    registerKratosToolsRead(server);
   } else if (CONFIG.mode === 'write') {
     // All tools (full functionality)
     registerTaskToolsRead(server, userData);
@@ -125,6 +128,8 @@ Use the ClickUp search tools to find tasks assigned to me, and get detailed info
     registerTimeToolsWrite(server);
     registerDocumentToolsRead(server);
     registerDocumentToolsWrite(server);
+    registerKratosToolsRead(server);
+    registerKratosToolsWrite(server);
   }
 
 
