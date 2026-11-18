@@ -1,0 +1,8 @@
+{
+  "entries": [
+    {
+      "violation": "outside-module: src/kratos/list-by-status.ts",
+      "reason": "Written before module folders were the rule; moving it to src/kratos/list-by-status/ is its own PR."
+    }
+  ]
+}

@@ -21,6 +21,15 @@ export const OUR_TESTS_ROOT = "src/kratos";
 export const UPSTREAM_TEST_PRELOAD = "./src/tests/setup.ts";
 export const LEDGER_FILE = "UPSTREAM-PATCHES.md";
 
+export const KRATOS_ROOT = "src/kratos";
+// Base-layer modules and root files of src/kratos; every other module is a feature.
+export const KRATOS_BASE_MODULES = ["clickup-api", "settings"] as const;
+export const KRATOS_ENTRY = "src/kratos/index.ts";
+// Upstream files allowed to import src/kratos/index.ts, each a seam row in UPSTREAM-PATCHES.md.
+export const UPSTREAM_SEAM_IMPORTERS = ["src/index.ts"] as const;
+export const UPSTREAM_IMPORTABLE = ["src/shared/"] as const;
+export const ARCHITECTURE_BASELINE = ".github/scripts/architecture/baseline.json";
+
 export const CHECKED_SOURCE = /\.(?:ts|js|mjs|sh|ya?ml)$/;
 export const HASH_COMMENT_SOURCE = /\.(?:sh|ya?ml)$/;
 

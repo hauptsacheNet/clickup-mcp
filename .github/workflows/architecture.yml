@@ -1,0 +1,20 @@
+# Judges src/kratos and its import edges with upstream; upstream-only files are never flagged.
+name: architecture
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  # No path filter: a required check must report green on docs-only PRs, never pending.
+  architecture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Checker tests
+        run: bun test ./.github/scripts/__tests__/architecture.test.ts
+      - name: Import rules
+        run: bun .github/scripts/architecture/cli.ts
