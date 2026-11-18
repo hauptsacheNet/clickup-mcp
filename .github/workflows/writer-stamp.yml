@@ -1,0 +1,30 @@
+# Fails a PR whose body has no complete machine-readable writer stamp.
+name: writer-stamp
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+permissions:
+  contents: read
+  pull-requests: read
+concurrency:
+  group: writer-stamp-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  writer-stamp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      # The checker comes from the default branch so a PR cannot edit its own gate.
+      - name: Checkout trusted script
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      # Until the default branch has the checker, the PR's copy bootstraps it.
+      - name: Checkout PR checker for bootstrap
+        if: hashFiles('.github/scripts/writer-stamp/cli.ts') == ''
+        uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Check writer stamp
+        run: bun .github/scripts/writer-stamp/cli.ts "${{ github.event.pull_request.number }}"

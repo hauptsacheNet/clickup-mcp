@@ -1,0 +1,60 @@
+# Sets the `review-verdicts` commit status: red while an AI review finding on the PR has no fixed or declined answer.
+name: review-verdicts
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, edited]
+  pull_request_review:
+    types: [submitted, edited, dismissed]
+  pull_request_review_comment:
+    types: [created, edited, deleted]
+  issue_comment:
+    types: [created, edited, deleted]
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+  statuses: write
+concurrency:
+  group: review-verdicts-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: false
+jobs:
+  review-verdicts:
+    if: github.event_name != 'issue_comment' || github.event.issue.pull_request
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      # A PR from another repository gets a read-only token, so it cannot post a status.
+      - name: Read PR head
+        id: pr
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq '[.head.repo.full_name, .head.sha] | @tsv' > pr.tsv
+          IFS=$'\t' read -r repo head < pr.tsv
+          if [ "$repo" = "$GITHUB_REPOSITORY" ]; then echo "head=$head" >> "$GITHUB_OUTPUT"; fi
+      # An older success must not stand on this head if the run fails below.
+      - name: Mark pending
+        if: steps.pr.outputs.head
+        run: gh api -X POST "repos/$GITHUB_REPOSITORY/statuses/${{ steps.pr.outputs.head }}" -f state=pending -f context=review-verdicts -f description="checking review answers" -f target_url="$RUN_URL"
+      # The checker comes from the default branch so a PR cannot edit its own gate.
+      - name: Checkout trusted script
+        if: steps.pr.outputs.head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      # Until the default branch has the checker, the PR's copy bootstraps it.
+      - name: Checkout PR checker for bootstrap
+        if: steps.pr.outputs.head && hashFiles('.github/scripts/review-verdicts/cli.ts') == ''
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.pr.outputs.head }}
+      - uses: oven-sh/setup-bun@v2
+        if: steps.pr.outputs.head
+      - name: Set review-verdicts status
+        if: steps.pr.outputs.head
+        run: bun .github/scripts/review-verdicts/cli.ts "$PR_NUMBER"
+      - name: Mark failed run
+        if: failure() && steps.pr.outputs.head
+        run: gh api -X POST "repos/$GITHUB_REPOSITORY/statuses/${{ steps.pr.outputs.head }}" -f state=failure -f context=review-verdicts -f description="review verdict check failed" -f target_url="$RUN_URL"
