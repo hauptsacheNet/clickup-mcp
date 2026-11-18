@@ -210,3 +210,58 @@ test("searchTasks uses paginated index with filters", async (t) => {
   await mockAgent.close();
   t.mock.timers.reset();
 });
+
+test("searchTasks drops a directly fetched custom-ID task outside the requested list", async (t) => {
+  t.mock.timers.enable();
+  process.env.CLICKUP_API_KEY = "test-key";
+  process.env.CLICKUP_TEAM_ID = "team1";
+
+  const { registerSearchTools } = await import("../tools/search-tools");
+
+  const mockAgent = new MockAgent();
+  mockAgent.disableNetConnect();
+  setGlobalDispatcher(mockAgent);
+  const client = mockAgent.get("https://api.clickup.com");
+
+  client
+    .intercept({ path: /\/api\/v2\/team\/team1\/task.*/, method: "GET" })
+    .reply(200, { tasks: [] })
+    .persist();
+
+  let directHit = false;
+  client
+    .intercept({ path: /\/api\/v2\/task\/ENG-302\?.*custom_task_ids=true.*/, method: "GET" })
+    .reply(200, () => {
+      directHit = true;
+      return {
+        id: "abc999",
+        custom_id: "ENG-302",
+        name: "Other List Task",
+        creator: { username: "creator", id: "1" },
+        assignees: [],
+        list: { id: "listB", name: "B" },
+        space: { id: "space1", name: "Space" },
+        status: { status: "open", type: "open" },
+        url: "https://app.clickup.com/t/abc999",
+        date_created: "0",
+        date_updated: "0",
+      };
+    });
+
+  const tools: Record<string, any> = {};
+  const serverStub = {
+    tool: (name: string, _d: string, _s: any, _o: any, handler: any) => {
+      tools[name] = handler;
+    },
+  } as any;
+
+  registerSearchTools(serverStub, { user: { username: "me", id: "u1" } });
+
+  const result = await tools.searchTasks({ terms: ["ENG-302"], list_ids: ["listA"] });
+  assert.ok(directHit, "expected direct custom-ID fetch");
+  assert.equal(result.content.length, 1);
+  assert.ok(result.content[0].text.includes("No tasks found"));
+
+  await mockAgent.close();
+  t.mock.timers.reset();
+});

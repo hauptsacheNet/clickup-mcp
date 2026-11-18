@@ -3,10 +3,12 @@ import { z } from "zod";
 import { convertMarkdownToToolCallResult, convertClickUpTextItemsToToolCallResult } from "../clickup-text";
 import { ContentBlock, DatedContentEvent, ImageMetadataBlock } from "../shared/types";
 import { CONFIG } from "../shared/config";
-import { isTaskId, getSpaceDetails, getAllTeamMembers } from "../shared/utils";
+import { getSpaceDetails, getAllTeamMembers } from "../shared/utils";
+import { TASK_ID_FORMAT_HINT, resolveTaskId, taskIdSchema } from "../shared/task-ids";
 import { downloadImages } from "../shared/image-processing";
 import { ExistingComment, fetchAllTopLevelComments, fetchRepliesByComment } from "../shared/comments";
 import { formatCustomFieldReadValue } from "../shared/custom-fields";
+import { describeCustomItem } from "../shared/task-types";
 
 // Read-specific utility functions
 
@@ -19,21 +21,16 @@ export function registerTaskToolsRead(server: McpServer, userData: any) {
       "The response provides complete context including task details, comments, and status history."
     ].join("\n"),
     {
-      id: z
-        .string()
-        .min(6)
-        .max(16)
-        .refine(val => isTaskId(val), {
-          message: "Task ID must be 6-16 alphanumeric characters only"
-        })
-        .describe(
-          `The 6-16 character ID of the task to get without a prefix like "#", "CU-" or "https://app.clickup.com/t/"`
-        ),
+      id: taskIdSchema(`The task to get: ${TASK_ID_FORMAT_HINT}`),
     },
     {
       readOnlyHint: true
     },
-    async ({ id }) => {
+    async ({ id: requestedId }) => {
+      // Custom Task IDs (e.g. ENG-302) are resolved to the generated ID first, so every
+      // loader below - comments, time in status, time entries - can use it.
+      const id = await resolveTaskId(requestedId);
+
       // 1. Load base task content, comment events, and status change events in parallel
       const [taskDetailContentBlocks, commentEvents, statusChangeEvents] = await Promise.all([
         loadTaskContent(id), // Returns Promise<ContentBlock[]>
@@ -324,6 +321,7 @@ export async function generateTaskMetadata(task: any, timeEntries?: any[], isDet
 
   const metadataLines = [
     `task_id: ${task.id}`,
+    ...(task.custom_id ? [`custom_id: ${task.custom_id}`] : []),
     `task_url: ${task.url}`,
     `name: ${task.name}`,
     `status: ${task.status.status}`,
@@ -334,6 +332,13 @@ export async function generateTaskMetadata(task: any, timeEntries?: any[], isDet
     `list: ${task.list.name} (${task.list.id})`,
     `space: ${spaceName} (${spaceIdForDisplay})`,
   ];
+
+  // Task type (custom item) - the name lookup is one cached call, so only in the detail view
+  if (isDetailView) {
+    metadataLines.push(`task_type: ${await describeCustomItem(task.custom_item_id)}`);
+  } else if (task.custom_item_id) {
+    metadataLines.push(`task_type: custom_item_id: ${task.custom_item_id}`);
+  }
 
   // Add priority if it exists
   if (task.priority !== undefined && task.priority !== null) {
